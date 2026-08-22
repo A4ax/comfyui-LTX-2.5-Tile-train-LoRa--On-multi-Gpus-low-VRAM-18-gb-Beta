@@ -1,0 +1,20 @@
+# DDP config for the 2x RTX 3060 TDP training pair (Gate 1 / Plan A).
+# No FSDP: each rank holds the full int4 model (~11GB fits a 12GB 3060) and
+# processes a spatial tile via the grad-aware TDP wrapper. DDP syncs the
+# LoRA-only gradients.
+compute_environment: LOCAL_MACHINE
+debug: false
+distributed_type: MULTI_GPU
+downcast_bf16: 'no'
+enable_cpu_affinity: false
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 2
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

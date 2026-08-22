@@ -1,0 +1,11 @@
+# LTX-2.5 Int4 Tile-Train training engine dependencies.
+# These go in the ENGINE venv (not ComfyUI's own venv) — install.py handles this.
+torch>=2.4
+torchaudio
+optimum-quanto
+peft
+safetensors
+bitsandbytes
+accelerate
+pyyaml
+ninja
