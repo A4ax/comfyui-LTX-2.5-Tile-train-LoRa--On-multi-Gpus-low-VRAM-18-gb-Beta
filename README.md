@@ -289,6 +289,8 @@ Live ring + loss chart, aligned per-step log (`(vX/aY)` = video/audio loss), and
 
 > 💡 Your **face** comes from the video *and* the images; your **voice** comes from the videos. Video clips train face+voice jointly; image clips reinforce the face.
 
+> 🚀 **Ready to train?** Use the included workflow **`ltx25_int4_face_voice_workflow.json`** — in ComfyUI go to **Workflow → Open** (or drag-drop the file) and it wires up the full face+voice training graph (Load Model → Tile Config → Voice Dataset → Encode Captions → Chunk FeedForward → Train → dashboards). Fill in your dataset and hit **Queue** to start.
+
 ---
 
 ## 🚀 Installation (clone → install → models → run)
@@ -322,7 +324,7 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
    ```
    It prints `[PASS]`/`[WARN]` for each item and a final **"ALL CHECKS PASS - ready to train"**.
 6. **Download the 5 models** from Hugging Face (see below) into your ComfyUI model folders.
-7. Restart ComfyUI, load `ltx25_int4_train_workflow`, and train. 🎉
+7. Restart ComfyUI, **load the `ltx25_int4_face_voice_workflow`** (from `workflow/ltx25_int4_face_voice_workflow.json`) and start training. 🎉
 
 > ⚙️ **VS Build Tools:** the default **bnb-NF4 backend uses prebuilt `bitsandbytes`** and does **not** need Visual Studio. **Visual Studio 2022 Build Tools** (the "Desktop development with C++" workload, `cl.exe`) is **only** required if you use the **int4/quanto** backend (set `LTX_VCVARS` to your `vcvarsall.bat` if needed).
 

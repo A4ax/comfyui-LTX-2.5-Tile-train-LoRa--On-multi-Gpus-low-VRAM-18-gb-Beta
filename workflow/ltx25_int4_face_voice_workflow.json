@@ -1,0 +1,651 @@
+{
+  "id": "2c32b114-85c7-4642-9bd7-720e5c50cc0d",
+  "revision": 0,
+  "last_node_id": 148,
+  "last_link_id": 108,
+  "nodes": [
+    {
+      "id": 23,
+      "type": "O2noorLTX25Int4LoadModel",
+      "pos": [
+        -1507.5986075529333,
+        -250.0180661603489
+      ],
+      "size": [
+        562.109375,
+        372.703125
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "links": [
+            27,
+            38,
+            42,
+            104,
+            105
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4LoadModel"
+      },
+      "widgets_values": [
+        "ltx-2.5-22b-distilled-bnb-nf4.safetensors",
+        "connectors_bf16.safetensors",
+        "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+        "ltx-2.5-video-vae-bf16.safetensors",
+        "ltx-2.5-audio-vae-bf16.safetensors",
+        24,
+        24,
+        0,
+        "gpu0",
+        "gpu2",
+        "gpu2"
+      ],
+      "widgets_values_named": {
+        "int4_model": "ltx-2.5-22b-distilled-bnb-nf4.safetensors",
+        "connectors": "connectors_bf16.safetensors",
+        "text_encoder": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
+        "video_vae": "ltx-2.5-video-vae-bf16.safetensors",
+        "audio_vae": "ltx-2.5-audio-vae-bf16.safetensors",
+        "transformer_blocks_gpu0": 24,
+        "transformer_blocks_gpu1": 24,
+        "transformer_blocks_gpu2": 0,
+        "connectors_device": "gpu0",
+        "video_vae_device": "gpu2",
+        "audio_vae_device": "gpu2"
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 24,
+      "type": "O2noorLTX25Int4VoiceDataset",
+      "pos": [
+        -388.2521586356507,
+        -284.5094137623
+      ],
+      "size": [
+        404,
+        1204
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "link": 27
+        },
+        {
+          "name": "captions",
+          "shape": 7,
+          "type": "LTX25_CAPTIONS",
+          "link": 43
+        }
+      ],
+      "outputs": [
+        {
+          "name": "dataset",
+          "type": "LTX25_DATASET",
+          "links": [
+            47
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4VoiceDataset"
+      },
+      "widgets_values": [
+        "[\"WhatsApp Video 2026-08-23 at 13.37.42.mp4\",\"WhatsApp Video 2026-08-23 at 13.37.50.mp4\"]",
+        "[\"WhatsApp Image 2026-08-23 at 13.37.51.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59.jpeg\"]",
+        "face+voice",
+        0.7,
+        20,
+        512,
+        512,
+        24,
+        "ltxchar",
+        "D:\\Comfy-Desktop\\ComfyUI-Installs\\nooraldeen\\ComfyUI\\dataset",
+        true,
+        0,
+        128,
+        false
+      ],
+      "widgets_values_named": {
+        "videos": "[\"WhatsApp Video 2026-08-23 at 13.37.42.mp4\",\"WhatsApp Video 2026-08-23 at 13.37.50.mp4\"]",
+        "images": "[\"WhatsApp Image 2026-08-23 at 13.37.51.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59.jpeg\"]",
+        "mode": "face+voice",
+        "segment_duration": 0.7,
+        "max_segments": 20,
+        "width": 512,
+        "height": 512,
+        "clip_fps": 24,
+        "trigger_word": "ltxchar",
+        "output_dir": "D:\\Comfy-Desktop\\ComfyUI-Installs\\nooraldeen\\ComfyUI\\dataset",
+        "vae_tiling": true,
+        "vae_tile_size": 0,
+        "vae_tile_overlap": 128,
+        "overwrite": false
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 25,
+      "type": "O2noorLTX25Int4EncodeCaptions",
+      "pos": [
+        -866.193242856318,
+        -77.78871124290822
+      ],
+      "size": [
+        400,
+        226
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "link": 42
+        }
+      ],
+      "outputs": [
+        {
+          "name": "captions",
+          "type": "LTX25_CAPTIONS",
+          "links": [
+            43
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4EncodeCaptions"
+      },
+      "widgets_values": [
+        "ltxchar",
+        "0,1",
+        "D:\\LTX-TRAINING\\working\\captions_cache",
+        false
+      ],
+      "widgets_values_named": {
+        "captions": "ltxchar",
+        "gpus": "0,1",
+        "output_dir": "D:\\LTX-TRAINING\\working\\captions_cache",
+        "overwrite": false
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 27,
+      "type": "O2noorLTX25Int4Metrics",
+      "pos": [
+        31.467771944847755,
+        226.30467245909318
+      ],
+      "size": [
+        530.484375,
+        672.25
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "run",
+          "type": "LTX25_RUN",
+          "link": 107
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4Metrics"
+      },
+      "widgets_values": [
+        200
+      ],
+      "widgets_values_named": {
+        "steps_window": 200
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 28,
+      "type": "O2noorLTX25Int4LogsOutputs",
+      "pos": [
+        574.4765676007187,
+        -261.67399517205905
+      ],
+      "size": [
+        875.4375,
+        816
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "run",
+          "type": "LTX25_RUN",
+          "link": 49
+        }
+      ],
+      "outputs": [
+        {
+          "name": "summary",
+          "type": "STRING",
+          "links": [
+            35
+          ]
+        },
+        {
+          "name": "milestones",
+          "type": "STRING",
+          "links": [
+            36
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4LogsOutputs"
+      },
+      "widgets_values": [
+        40
+      ],
+      "widgets_values_named": {
+        "lines": 40
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 29,
+      "type": "O2noorLTX25Int4SummaryViewer",
+      "pos": [
+        1462.385953915209,
+        -239.47456718563024
+      ],
+      "size": [
+        460.46875,
+        510.125
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "summary",
+          "type": "STRING",
+          "link": 35
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4SummaryViewer"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {},
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 30,
+      "type": "O2noorLTX25Int4Progress",
+      "pos": [
+        1116.8892215685191,
+        593.1733948862811
+      ],
+      "size": [
+        469.9375,
+        374.5625
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "milestones",
+          "type": "STRING",
+          "link": 36
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4Progress"
+      },
+      "widgets_values": [
+        200
+      ],
+      "widgets_values_named": {
+        "steps_window": 200
+      },
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 31,
+      "type": "O2noorLTX25Int4SystemMonitor",
+      "pos": [
+        606.0157204295919,
+        593.0562563201358
+      ],
+      "size": [
+        484,
+        319.71875
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "run",
+          "type": "LTX25_RUN",
+          "link": 108
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4SystemMonitor"
+      },
+      "widgets_values": [],
+      "widgets_values_named": {},
+      "color": "#222",
+      "bgcolor": "#000"
+    },
+    {
+      "id": 32,
+      "type": "O2noorLTX25Int4TileConfig",
+      "pos": [
+        -814.9961908976487,
+        -272.17634618088346
+      ],
+      "size": [
+        308.484375,
+        142
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "link": 38
+        }
+      ],
+      "outputs": [
+        {
+          "name": "tile_config",
+          "type": "LTX25_TILECONFIG",
+          "links": [
+            46
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4TileConfig"
+      },
+      "widgets_values": [
+        1,
+        1,
+        0
+      ],
+      "widgets_values_named": {
+        "horizontal_tiles": 1,
+        "vertical_tiles": 1,
+        "overlap": 0
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 37,
+      "type": "O2noorLTX25Int4Train",
+      "pos": [
+        154.39498127605088,
+        -248.4597795716909
+      ],
+      "size": [
+        296.5625,
+        386
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "link": 105
+        },
+        {
+          "name": "dataset",
+          "type": "LTX25_DATASET",
+          "link": 47
+        },
+        {
+          "name": "tile_config",
+          "shape": 7,
+          "type": "LTX25_TILECONFIG",
+          "link": 46
+        }
+      ],
+      "outputs": [
+        {
+          "name": "run",
+          "type": "LTX25_RUN",
+          "links": [
+            49,
+            107,
+            108
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25Int4Train"
+      },
+      "widgets_values": [
+        "ltx25_train",
+        true,
+        2000,
+        0.0003,
+        16,
+        16,
+        250,
+        true,
+        true,
+        false
+      ],
+      "widgets_values_named": {
+        "run_name": "ltx25_train",
+        "auto_unique": true,
+        "steps": 2000,
+        "lr": 0.0003,
+        "rank": 16,
+        "alpha": 16,
+        "checkpoint_interval": 250,
+        "blocking": true,
+        "gradient_checkpointing": true,
+        "use_wsl": false
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    },
+    {
+      "id": 147,
+      "type": "O2noorLTX25ChunkFeedForward",
+      "pos": [
+        -17.24304473185336,
+        -558.9817049110654
+      ],
+      "size": [
+        472.875,
+        114
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 4,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "link": 104
+        }
+      ],
+      "outputs": [
+        {
+          "name": "model",
+          "type": "LTX25_MODEL",
+          "links": []
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "O2noorLTX25ChunkFeedForward"
+      },
+      "widgets_values": [
+        8,
+        2816
+      ],
+      "widgets_values_named": {
+        "chunks": 8,
+        "dim_threshold": 2816
+      },
+      "color": "#223",
+      "bgcolor": "#335"
+    }
+  ],
+  "links": [
+    [
+      27,
+      23,
+      0,
+      24,
+      0,
+      "LTX25_MODEL"
+    ],
+    [
+      35,
+      28,
+      0,
+      29,
+      0,
+      "STRING"
+    ],
+    [
+      36,
+      28,
+      1,
+      30,
+      0,
+      "STRING"
+    ],
+    [
+      38,
+      23,
+      0,
+      32,
+      0,
+      "LTX25_MODEL"
+    ],
+    [
+      42,
+      23,
+      0,
+      25,
+      0,
+      "LTX25_MODEL"
+    ],
+    [
+      43,
+      25,
+      0,
+      24,
+      1,
+      "LTX25_CAPTIONS"
+    ],
+    [
+      46,
+      32,
+      0,
+      37,
+      2,
+      "LTX25_TILECONFIG"
+    ],
+    [
+      47,
+      24,
+      0,
+      37,
+      1,
+      "LTX25_DATASET"
+    ],
+    [
+      49,
+      37,
+      0,
+      28,
+      0,
+      "LTX25_RUN"
+    ],
+    [
+      104,
+      23,
+      0,
+      147,
+      0,
+      "LTX25_MODEL"
+    ],
+    [
+      105,
+      23,
+      0,
+      37,
+      0,
+      "LTX25_MODEL"
+    ],
+    [
+      107,
+      37,
+      0,
+      27,
+      0,
+      "LTX25_RUN"
+    ],
+    [
+      108,
+      37,
+      0,
+      31,
+      0,
+      "LTX25_RUN"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.8137313684210637,
+      "offset": [
+        1646.8523399721055,
+        624.9467169023133
+      ]
+    },
+    "frontendVersion": "1.49.6",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}
