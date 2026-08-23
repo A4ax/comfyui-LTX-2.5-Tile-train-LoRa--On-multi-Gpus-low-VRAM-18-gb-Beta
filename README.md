@@ -314,11 +314,17 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
    ```bat
    "D:\ComfyUI\.venv\Scripts\python.exe" install.py
    ```
+   - The installer **auto-detects your GPU**: on an **NVIDIA** machine it installs **CUDA-enabled PyTorch** (cu124); otherwise CPU-only (with a warning that GPU training is unavailable).
    GPUs are **auto-detected** — no GPU config needed. Use the Tile Config node only if you want a custom split.
-5. **Download the 5 models** from Hugging Face (see below) into your ComfyUI model folders.
-6. Restart ComfyUI, load `ltx25_int4_train_workflow`, and train. 🎉
+5. **Verify the install is ready** (optional but recommended) — checks GPU, CUDA torch, and the models:
+   ```bat
+   python install.py --check
+   ```
+   It prints `[PASS]`/`[WARN]` for each item and a final **"ALL CHECKS PASS - ready to train"**.
+6. **Download the 5 models** from Hugging Face (see below) into your ComfyUI model folders.
+7. Restart ComfyUI, load `ltx25_int4_train_workflow`, and train. 🎉
 
-> ⚙️ **Before running the installer:** you need **Visual Studio 2022 Build Tools** with the **"Desktop development with C++"** workload (`cl.exe`) for the int4/bnb JIT build. Set `LTX_VCVARS` to your `vcvarsall.bat` if needed.
+> ⚙️ **VS Build Tools:** the default **bnb-NF4 backend uses prebuilt `bitsandbytes`** and does **not** need Visual Studio. **Visual Studio 2022 Build Tools** (the "Desktop development with C++" workload, `cl.exe`) is **only** required if you use the **int4/quanto** backend (set `LTX_VCVARS` to your `vcvarsall.bat` if needed).
 
 ---
 
