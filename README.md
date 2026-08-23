@@ -97,6 +97,19 @@ LTX-2.5 22B distilled transformer · NF4 4-bit · 512×512 training.
 
 > The interesting result isn't a speed race — it's that a 22B transformer fits into a **~7.2 GB/card budget** on 2 GPUs (and ~4.8 GB on 3), which is far below the 32/48 GB a full-precision path typically needs.
 
+### 🚀 We made it faster!
+
+After a training-speed pass (removed per-param host stalls, redundant per-tile barriers, per-step telemetry collectives; loss accumulated on device; coords/samples cached; ETA from an EMA; gradient-checkpointing disabled when tiled), the same 2× RTX 3060 512×512 setup runs **much faster**:
+
+| Metric | Before | After |
+|---|---:|---:|
+| Step time (overall) | ≈5.96 s | **≈4.75 s** |
+| Image clips | — | **≈2.67 s** |
+| Voice clips | ≈6–17 s (varies) | **≈5.6 s** |
+| Throughput | ≈0.178 step/s | **≈0.21 step/s** |
+
+> Measured on a current 1×1 512×512 face+voice run (2000 steps). Speed is data-dependent — image clips (no audio branch) are faster than voice clips (full video+audio). The bottleneck was host→GPU sync stalls and serialization, not the distributed backend — so NCCL vs gloo alone did **not** change speed (see the WSL note below).
+
 ---
 
 ## ⚡ NF4 vs. int4 performance observation
@@ -204,7 +217,7 @@ The Gemma text encoder is loaded with **8-bit quantization** (much smaller VRAM 
 | **video VAE** | Encodes your face video → video latents | secondary GPU (during preprocessing) |
 | **audio VAE** | Encodes your voice → audio latents | secondary GPU (during preprocessing) |
 
-The **connectors / embeddings_processor** runs "in the background when the engine starts" — it turns raw text features into the video (4096-dim) + audio (2048-dim) context the transformer expects.
+The **connectors / embeddings_processor** is **applied offline during dataset preprocessing** (and on CPU during generation) — it turns raw text features into the video (4096-dim) + audio (2048-dim) context the transformer expects. It is **not loaded into GPU VRAM during training** (training uses the precomputed, cached embeddings).
 
 ---
 
@@ -223,7 +236,10 @@ Upload **speaking videos** (+ optional face images).
 - **mode** — `face+voice` or `face-only`.
 - **segment_duration** (s) — clip length (snaps to a valid LTX frame bucket). `1.0s` recommended for voice.
 - **max_segments** — cap on clips per video.
-- Auto-splits each video into clips and (in voice mode) encodes the voice into `audio_latents/`.
+- **vae_tile_size** (slider) — VAE-encode tile in pixels; **`0` = auto** (single tile at ≤512×512). Higher = more VRAM per tile, fewer tiles, faster.
+- **vae_tile_overlap** (slider) — overlap in pixels between VAE tiles (0–256, default 128); prevents seams only when actually tiling.
+- **overwrite** — force re-encode even if latents exist.
+- Auto-splits each video into clips and (in voice mode) encodes the voice into `audio_latents/`; **auto re-encodes** any clip whose source changed.
 
 ### 🧩 `O2noor LTX 2.5 Int4 Dataset`
 The **face-only** dataset builder (upload face images) — the original.
@@ -236,6 +252,16 @@ Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted)
 - **auto_unique** 🆕 — ON by default: if the output folder exists, it appends a timestamp so **retraining never overwrites the old LoRA**.
 - **steps / lr / rank / alpha / checkpoint_interval** — hyper-params.
 - **gradient_checkpointing** — ON for low VRAM.
+- **tile_config** — optional input from the Tile Config node (below).
+
+### 🧩 `O2noor LTX 2.5 Int4 Tile Config`
+Activates **spatial transformer tiling** for training (for VRAM/experiments):
+- **horizontal_tiles / vertical_tiles** — grid (e.g. `2×2`, `1×3`, `5×6`); `1×1` = off.
+- **overlap** — per-axis tile overlap in latent units (0–16).
+- Applies to the **H×W spatial grid** (note: builds the grid string as `vertical × horizontal`). When tiling is active, gradient-checkpointing is auto-disabled (tiling already bounds activation memory → avoids N× recompute).
+
+### 🧩 `O2noor LTX 2.5 Chunk FeedForward`
+Low-VRAM FFN chunking for training (returns an `LTX25_MODEL` stamped with `ffn_chunks` / `ffn_dim_threshold`). Splits the feed-forward over the sequence dimension to cut activation peaks.
 
 ### 📊 `O2noor LTX 2.5 Metrics Dashboard`
 Live dashboard: circular ring, **loss / video loss / audio loss**, **s/step**, **step/s**, **ETA**, **VRAM gpu0/gpu1/total** (bars), **grads**, collapsible **History** chart. Connect its `run` input to the Train node.
@@ -289,7 +315,7 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
    "D:\ComfyUI\.venv\Scripts\python.exe" install.py
    ```
    GPUs are **auto-detected** — no GPU config needed. Use the Tile Config node only if you want a custom split.
-5. **Download the 6 models** from Hugging Face (see below) into your ComfyUI model folders.
+5. **Download the 5 models** from Hugging Face (see below) into your ComfyUI model folders.
 6. Restart ComfyUI, load `ltx25_int4_train_workflow`, and train. 🎉
 
 > ⚙️ **Before running the installer:** you need **Visual Studio 2022 Build Tools** with the **"Desktop development with C++"** workload (`cl.exe`) for the int4/bnb JIT build. Set `LTX_VCVARS` to your `vcvarsall.bat` if needed.
@@ -301,6 +327,8 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
 The **native-Windows engine** uses the **gloo** distributed backend (the only backend PyTorch ships on Windows). On multi-GPU sharded training that means CPU/TCP transfers between GPUs.
 
 If you want **faster GPU→GPU communication**, the engine can run inside **WSL2 (Linux)**, where **NCCL** is available. Enable it per-run on the **`O2noor LTX 2.5 Int4 Train`** node with **`use_wsl`**:
+
+> ⚠️ **Measured note:** in testing, enabling NCCL/WSL gave **no observed speedup** — the training bottleneck was **host→GPU sync stalls and per-step serialization**, not the distributed backend's bandwidth (the per-step comm volume is tiny). The speedups came from the training-pass fixes (see "We made it faster!"). So `use_wsl` is **optional** — only use it if it happens to help on your hardware. Speed is the same either way on this setup.
 
 - **`use_wsl = OFF`** → the normal native-Windows engine (gloo), as before.
 - **`use_wsl = ON`** → the engine launches via WSL2 with **NCCL** (faster multi-GPU communication). All paths are auto-translated from `D:\…` to `/mnt/d/…` — nothing is hardcoded.
@@ -388,6 +416,8 @@ Extending the tiling system to **2×2, 3×3 … 6×6 spatial tiling** with confi
 
 **Generation samples** (images + video) from this LoRA — *(to be added to `results/tiling-2x2-1500/`)*.
 
+> ⚠️ **Caveat (learned after this run):** the documented 2×2 run trained with `normalize_positions=True`, which **rebased every tile's RoPE to position 0** — that produced a train/inference position mismatch and **noisy/static video** at generation (voice stayed clean because audio isn't tiled). The ~2.4 reported "video loss" was also a **sum-of-tiles artifact** (per-tile it was healthy ~0.6). The fix — **`normalize_positions=False`** (keep absolute tile positions) — is now the default in the engine. So 2×2 and arbitrary grids (1×3, 3×2, 5×6) train with correct orientation and positions; always **verify generation quality** per grid.
+
 ### 🔜 Experimental block streaming (future work)
 Dynamic transformer-block streaming — a GPU keeps a working set of blocks and replaces completed ones with upcoming ones (reduce peak VRAM, keep the GPU busy). **Experimental until benchmarked.**
 
@@ -459,16 +489,15 @@ The **engineering contribution** is combining these into a working LTX-2.5 train
 
 ## 📦 Models (Hugging Face)
 
-Download these **6 files** into your model folder (the installer tells you exactly where).
+Download these **5 files** into your model folder (the installer tells you exactly where). The base model is **fully self-contained** — the connectors/aux layers are already merged inside it, so **no separate `connectors_bf16.safetensors` and no quantized cache folders are needed**.
 
 | File | Size | Put in |
 |---|---|---|
-| `ltx-2.5-22b-distilled-bnb-nf4.safetensors` | ≈10 GB | `diffusion_models/` |
-| `connectors_bf16.safetensors` | ≈3.8 GB | `diffusion_models/` |
-| `embeddings_processor_bf16.safetensors` | ≈6 GB | `diffusion_models/` |
-| `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈25 GB | `text_encoders/` |
-| `ltx-2.5-video-vae-bf16.safetensors` | ≈1.4 GB | `vae/` |
-| `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.35 GB | `vae/` |
+| `ltx-2.5-22b-distilled-bnb-nf4.safetensors` | ≈10.4 GB | `diffusion_models/` |
+| `embeddings_processor_bf16.safetensors` | ≈6.3 GB | `diffusion_models/` |
+| `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈26 GB | `text_encoders/` |
+| `ltx-2.5-video-vae-bf16.safetensors` | ≈1.5 GB | `vae/` |
+| `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.36 GB | `vae/` |
 
 > **Prebuilt quantized weights:** See the Hugging Face repository linked below *(you'll add the real link)*.
 >
