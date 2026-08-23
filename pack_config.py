@@ -69,6 +69,11 @@ def _defaults():
         "plain_sidecar": _find_in(dm, "plain.pt"),
         # Dataset root for training data (latents/ audio_latents/ conditions/). Overridable in config.json.
         "dataset_root": os.path.join(PACK_DIR, "dataset"),
+        # WSL2 / NCCL (faster multi-GPU backend). Empty = not configured yet.
+        "wsl_distro": "Ubuntu",
+        "wsl_python": "",          # Linux engine venv python, e.g. /home/<user>/ltx/.venv/bin/python
+        "wsl_engine_dir": "",      # Linux path to the engine dir, e.g. /mnt/d/LTX-TRAINING/working
+        "wsl_models_dir": "",      # Linux path to models (copy into WSL fs for speed), else /mnt/d auto-derived
     }
 
 
@@ -112,6 +117,20 @@ def engine_workdir() -> str:
 
 def packages_dir() -> str:
     return load_config().get("packages_dir", PACKAGES_DIR)
+
+
+def win_to_wsl(path):
+    """Translate a Windows path (D:\\foo\\bar) to a WSL path (/mnt/d/foo/bar).
+    Already-Linux paths (starting with '/') are returned unchanged. Not hardcoded
+    to any specific drive — handles any single-letter drive letter."""
+    if not path:
+        return path
+    p = str(path).replace("\\", "/")
+    if p.startswith("/"):
+        return p
+    if len(p) >= 2 and p[1] == ":" and p[0].isalpha():
+        return "/mnt/" + p[0].lower() + "/" + p[2:].lstrip("/")
+    return p
 
 
 def models_root() -> str:

@@ -1,15 +1,16 @@
 """Load the MSVC Build Tools (vcvars64) environment into os.environ.
 
 Reusable for all training commands so torch's C++ extension builds
-(quanto tinygemm) can find cl.exe/link.exe/ninja.
+(quanto tinygemm) can find cl.exe/link.exe/ninja on Windows. On non-Windows
+(WSL2 / Linux) this is a no-op: the bnb/quanto JIT build uses gcc/ninja there
+and needs no MSVC environment.
 """
 import os
-import subprocess
 import sys
-import tempfile
 
 
 def _find_vcvars() -> str:
+    # LTX_VCVARS override, then common Visual Studio Build Tools locations.
     cand = os.environ.get("LTX_VCVARS", "")
     if cand and os.path.exists(cand):
         return cand
@@ -25,8 +26,13 @@ VCVARS = _find_vcvars()
 
 
 def load_msvc_env(arch: str = "x64") -> dict[str, str]:
+    # Linux / WSL: no MSVC needed (gcc + ninja handle the JIT build). No-op.
+    if sys.platform != "win32":
+        return dict(os.environ)
     if not os.path.exists(VCVARS):
         return dict(os.environ)
+    import subprocess
+    import tempfile
     bat = os.path.join(tempfile.gettempdir(), f"vcvars_dump_{os.getpid()}_{arch}.bat")
     with open(bat, "w") as f:
         f.write(f'@echo off\r\ncall "{VCVARS}" {arch} >nul\r\nset\r\n')

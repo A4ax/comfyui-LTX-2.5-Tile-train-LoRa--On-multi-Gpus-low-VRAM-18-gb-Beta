@@ -114,15 +114,14 @@ def build_engine_cmd(script, args=None, *, visible_devices=None, scripts_dir=Non
 
 def _set_engine_env(env):
     """Inject machine-independent engine paths into a subprocess env."""
-    import pack_config as _pc
-    cfg = _pc.load_config()
+    cfg = pack_config.load_config()
     env["LTX_ENGINE_DIR"] = engine_workdir()
     env["LTX_ENGINE_PYTHON"] = engine_python()
-    env["LTX_PACKAGES_DIR"] = _pc.packages_dir()
-    env["LTX_MODELS_DIR"] = _pc.models_root()
-    env["LTX_CACHE_DIR"] = cfg.get("cache_dir") or os.path.join(_pc.models_root(), "diffusion_models")
+    env["LTX_PACKAGES_DIR"] = pack_config.packages_dir()
+    env["LTX_MODELS_DIR"] = pack_config.models_root()
+    env["LTX_CACHE_DIR"] = cfg.get("cache_dir") or os.path.join(pack_config.models_root(), "diffusion_models")
     env["LTX_DATASET_ROOT"] = cfg.get("dataset_root") or ""
-    env["LTX_CONFIG"] = _pc.CONFIG_PATH
+    env["LTX_CONFIG"] = pack_config.CONFIG_PATH
 
 
 def run_engine(script, args=None, *, visible_devices=None, timeout=86400, workdir=None):

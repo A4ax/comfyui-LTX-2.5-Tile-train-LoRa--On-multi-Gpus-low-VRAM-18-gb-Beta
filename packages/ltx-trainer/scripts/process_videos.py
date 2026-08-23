@@ -420,6 +420,8 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
     batch_size: int = 1,
     device: str = "cuda",
     vae_tiling: bool = False,
+    tile_size: int = DEFAULT_TILE_SIZE,
+    tile_overlap: int = DEFAULT_TILE_OVERLAP,
     with_audio: bool = False,
     audio_output_dir: str | None = None,
     num_dataloader_workers: int = 4,
@@ -506,9 +508,20 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
 
     def _is_done(idx: int) -> bool:
         rel = _output_relative(dataset.main_media_paths[idx], data_root).with_suffix(".pt")
-        if not (output_path / rel).is_file():
+        vid_latent = output_path / rel
+        if not vid_latent.is_file():
             return False
-        return audio_output_path is None or (audio_output_path / rel).is_file()
+        if audio_output_path is not None and not (audio_output_path / rel).is_file():
+            return False
+        # Auto change-detection: if the source media is NEWER than the latent, the
+        # source was replaced/edited -> re-encode it even though `overwrite` is off.
+        try:
+            src = dataset.main_media_paths[idx]
+            if os.path.getmtime(src) > vid_latent.stat().st_mtime:
+                return False
+        except Exception:
+            pass
+        return True
 
     dataloader = _build_sharded_dataloader(
         dataset,
@@ -569,7 +582,8 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
             # Encode video
             with torch.inference_mode():
                 video_latent_data = _encode_video(
-                    vae=vae, video=video, use_tiling=vae_tiling, scale_factors=scale_factors
+                    vae=vae, video=video, use_tiling=vae_tiling,
+                    tile_size=tile_size, tile_overlap=tile_overlap, scale_factors=scale_factors,
                 )
 
             # Save latents for each item in batch
@@ -1457,6 +1471,8 @@ def main(  # noqa: PLR0913
         default=False,
         help="Enable VAE tiling for larger video resolutions",
     ),
+    tile_size: int = typer.Option(default=DEFAULT_TILE_SIZE, help="VAE tile size in pixels (0 = auto/full frame)"),
+    tile_overlap: int = typer.Option(default=DEFAULT_TILE_OVERLAP, help="VAE tile overlap in pixels"),
     load_times_path: str | None = typer.Option(
         default=None,
         help="load_times.jsonl path to append model load times",
@@ -1532,6 +1548,8 @@ def main(  # noqa: PLR0913
         batch_size=batch_size,
         device=device,
         vae_tiling=vae_tiling,
+        tile_size=tile_size,
+        tile_overlap=tile_overlap,
         with_audio=with_audio,
         audio_output_dir=audio_output_dir,
         overwrite=overwrite,

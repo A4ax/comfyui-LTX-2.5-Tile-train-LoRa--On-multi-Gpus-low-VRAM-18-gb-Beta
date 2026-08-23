@@ -28,6 +28,7 @@ from .nodes.batch_prompt_node import O2noorLTX25BatchPrompt
 from .nodes.progress_summary_node import O2noorLTX25Int4Progress, O2noorLTX25Int4SummaryViewer
 from .nodes.metrics_node import O2noorLTX25Int4Metrics
 from .nodes.system_monitor_node import O2noorLTX25Int4SystemMonitor
+from .nodes.chunk_ffn_node import O2noorLTX25ChunkFeedForward
 
 WEB_DIRECTORY = "./web"
 
@@ -47,6 +48,7 @@ NODE_CLASS_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": O2noorLTX25Int4SummaryViewer,
     "O2noorLTX25Int4Metrics": O2noorLTX25Int4Metrics,
     "O2noorLTX25Int4SystemMonitor": O2noorLTX25Int4SystemMonitor,
+    "O2noorLTX25ChunkFeedForward": O2noorLTX25ChunkFeedForward,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -65,6 +67,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": "O2noor LTX 2.5 Summary (Info)",
     "O2noorLTX25Int4Metrics": "O2noor LTX 2.5 Metrics Dashboard",
     "O2noorLTX25Int4SystemMonitor": "O2noor LTX 2.5 System Monitor",
+    "O2noorLTX25ChunkFeedForward": "modify version from kjNodes ltx 2.5 Chunk FeedForward",
 }
 
 __all__ = ["WEB_DIRECTORY", "NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS"]

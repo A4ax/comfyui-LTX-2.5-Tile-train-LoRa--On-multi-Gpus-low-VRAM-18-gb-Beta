@@ -223,7 +223,7 @@ function addProgressWidget(nodeType) {
       });
       widget.serialize = false;
       // Height sized to fit the SVG row (120) + gap + chart (120) + padding.
-      widget.computeLayoutSize = () => ({ minHeight: 300, maxHeight: 300, minWidth: 360, maxWidth: 1e6 });
+      widget.computeLayoutSize = () => ({ minHeight: 120, maxHeight: 4000, minWidth: 300, maxWidth: 1e6 });
 
       let telPath = null;
       let lastPct = -1;
@@ -241,7 +241,9 @@ function addProgressWidget(nodeType) {
           ctx.fillText("loss history…", 8, 16);
           return;
         }
-        const min = Math.min(...data), max = Math.max(...data);
+        const all = data.concat(aData.filter((v) => v != null));
+        const min = all.length ? Math.min(...all) : 0;
+        const max = all.length ? Math.max(...all) : 1;
         const span = (max - min) || 1;
         const drawableH = Math.max(h - LABEL_H - 4, 10);
         const yFor = (v) => 4 + (1 - (v - min) / span) * (drawableH - 8);
@@ -374,7 +376,7 @@ function addSummaryWidget(nodeType) {
         serializeValue: () => "",
       });
       widget.serialize = false;
-      widget.computeLayoutSize = () => ({ minHeight: 260, maxHeight: 260, minWidth: 420, maxWidth: 1e6 });
+      widget.computeLayoutSize = () => ({ minHeight: 120, maxHeight: 4000, minWidth: 320, maxWidth: 1e6 });
 
       // Reload-safety: repopulate from run.json so switching workflows and coming
       // back doesn't leave the summary empty. RETRIES periodically (the graph / Train

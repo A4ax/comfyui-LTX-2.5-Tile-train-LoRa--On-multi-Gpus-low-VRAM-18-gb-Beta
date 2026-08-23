@@ -195,7 +195,7 @@ const EXT = {
           getValue: () => "", setValue: () => {}, serializeValue: () => "",
         });
         widget.serialize = false;
-        widget.computeLayoutSize = () => ({ minHeight: 360, maxHeight: 420, minWidth: 380, maxWidth: 1e6 });
+        widget.computeLayoutSize = () => ({ minHeight: 200, maxHeight: 420, minWidth: 320, maxWidth: 1e6 });
 
         let telPath = null, lastPct = -1;
         const set = (id, val) => { const el = root.querySelector("#" + id); if (el) el.textContent = val; };
@@ -206,7 +206,9 @@ const EXT = {
           const n = getWindow();
           const data = losses.slice(-n), aData = aLosses.slice(-n);
           if (data.length < 2) { hctx.fillStyle = "#8b949e"; hctx.font = "11px Inter"; hctx.fillText("loss history…", 6, 14); return; }
-          const min = Math.min(...data), max = Math.max(...data);
+          const all = data.concat(aData.filter((v) => v != null));
+          const min = all.length ? Math.min(...all) : 0;
+          const max = all.length ? Math.max(...all) : 1;
           const span = (max - min) || 1;
           const yFor = (v) => 6 + (1 - (v - min) / span) * (h - 20);
           hctx.strokeStyle = "#22d3ee"; hctx.lineWidth = 2; hctx.beginPath();

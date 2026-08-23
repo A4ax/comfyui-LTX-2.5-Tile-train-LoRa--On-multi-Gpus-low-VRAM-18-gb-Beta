@@ -157,11 +157,9 @@ const LOGS_EXT = {
           serializeValue: () => "",
         });
         widget.serialize = false;
-        widget.computeLayoutSize = () => {
-          const w = Math.max(460, (node.size && node.size[0]) || 460);
-          const h = Math.max(200, ((node.size && node.size[1]) || 300) - 66);
-          return { minHeight: h, maxHeight: h, minWidth: w, maxWidth: 1e6 };
-        };
+        // Allow free resizing (big or small) and let ComfyUI persist it across
+        // restarts (a fixed minHeight=maxHeight here forced it back big on reload).
+        widget.computeLayoutSize = () => ({ minHeight: 60, maxHeight: 4000, minWidth: 120, maxWidth: 1e6 });
 
         let telPath = null;
         let lastKey = "";

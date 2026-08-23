@@ -112,6 +112,17 @@ class O2noorLTX25Int4VoiceDataset:
                     "tooltip": "Where latents/audio_latents/conditions are written (any disk path)."}),
                 "vae_tiling": ("BOOLEAN", {"default": True,
                     "tooltip": "Tile the VAE for larger resolutions (avoids OOM)."}),
+                "vae_tile_size": ("INT", {"default": 0, "min": 0, "max": 1280, "step": 32,
+                    "tooltip": "VAE tile size in pixels. 0 = auto (engine default ~512). "
+                               "Slide up for more VRAM per tile, fewer tiles, faster encode. "
+                               "Slide down for less VRAM, more tiles, slower."}),
+                "vae_tile_overlap": ("INT", {"default": 128, "min": 0, "max": 256, "step": 32,
+                    "tooltip": "VAE tile overlap in pixels (0-256). Higher = smoother seams but "
+                               "more redundant compute (slower). 128 = default."}),
+                "overwrite": ("BOOLEAN", {"default": False,
+                    "tooltip": "Re-encode video/audio latents even if they already exist. "
+                               "OFF = reuse existing latents (faster on repeated runs). "
+                               "ON = force re-encode after you change the dataset."}),
             },
             "optional": {
                 "captions": ("LTX25_CAPTIONS", {
@@ -129,7 +140,8 @@ class O2noorLTX25Int4VoiceDataset:
 
     def preprocess(self, model, videos, images, mode="face+voice", segment_duration=0.7,
                    max_segments=0, width=512, height=512, clip_fps=24, trigger_word="ltxchar",
-                   output_dir=None, vae_tiling=True, captions=None):
+                   output_dir=None, vae_tiling=True, vae_tile_size=512, vae_tile_overlap=128,
+                   overwrite=False, captions=None):
         cfg = pack_config.load_config()
         if not output_dir:
             output_dir = cfg.get("dataset_root") or os.path.join(engine_driver.engine_workdir(), "dataset")
@@ -372,7 +384,11 @@ class O2noorLTX25Int4VoiceDataset:
         vid_args += ["--device", proc_dev, "--load-times-path", lt_path]
         if vae_tiling:
             vid_args.append("--vae-tiling")
-        vid_args.append("--overwrite")
+            if int(vae_tile_size) > 0:
+                vid_args += ["--tile-size", str(int(vae_tile_size))]
+            vid_args += ["--tile-overlap", str(int(vae_tile_overlap))]
+        if overwrite:
+            vid_args.append("--overwrite")
         rc, tail = engine_driver.run_engine("process_videos.py", vid_args)
         log_parts.append(f"[process_videos] rc={rc}\n{tail}")
         if rc != 0:
