@@ -87,6 +87,42 @@ LTX-2.5 22B distilled transformer · NF4 4-bit · 512×512 training.
 
 ---
 
+## 🖼️ LoRA Results
+
+### 138 images + 37 voice segments + speaking-video clips → 2,000 steps
+Results generated using the LoRA trained by this project (2× RTX 3060 12 GB, 4-bit NF4, face + voice).
+
+**Measured training outcome (run `ltx25_face_lora_20260822_095830`):**
+
+| Metric | Value |
+|---|---|
+| Mode | face + voice (joint video + audio) |
+| Steps | 2,000 |
+| Total time | ≈3.4 h (12,260 s) |
+| Avg throughput | 0.178 step/s (~5.96 s/step) |
+| Peak VRAM (torch) | gpu0 7.74 / gpu1 7.20 GB (14.94 total) |
+| Final video loss (face) | **0.324** |
+| Final audio loss (voice) | **0.758** |
+| Init time | model load 63.3 s · total 69.8 s |
+| Checkpoints | 8 × 463 MB (steps 250 → 2000) |
+
+### 2,000-step face + voice test — no tile config in training
+Training screenshots in order, plus the generated video (folder: `results/2000-steps-voice-face-no-tile-config/`).
+
+<table>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/01.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/02.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/03.png" width="256"></td></tr>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/04.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/05.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/06.png" width="256"></td></tr>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/07.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/08.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/09.png" width="256"></td></tr>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/10.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/11.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/12.png" width="256"></td></tr>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/13.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/14.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/15.png" width="256"></td></tr>
+<tr><td><img src="results/2000-steps-voice-face-no-tile-config/16.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/17.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/18.png" width="256"></td></tr>
+</table>
+
+**Generated video (face + voice):**
+[▶ `results/2000-steps-voice-face-no-tile-config/video.mp4`](results/2000-steps-voice-face-no-tile-config/video.mp4)
+
+---
+
 ## 📊 Benchmark
 
 | Configuration | Measured VRAM/card | Step time | Status |
@@ -449,51 +485,6 @@ Extending the tiling system to **2×2, 3×3 … 6×6 spatial tiling** with confi
 
 ### 🔜 Experimental block streaming (future work)
 Dynamic transformer-block streaming — a GPU keeps a working set of blocks and replaces completed ones with upcoming ones (reduce peak VRAM, keep the GPU busy). **Experimental until benchmarked.**
-
----
-
-## 🖼️ LoRA Results
-
-### 138 images + 37 voice segments + speaking-video clips → 2,000 steps
-Results generated using the LoRA trained by this project (2× RTX 3060 12 GB, 4-bit NF4, face + voice).
-
-**Measured training outcome (run `ltx25_face_lora_20260822_095830`):**
-
-| Metric | Value |
-|---|---|
-| Mode | face + voice (joint video + audio) |
-| Steps | 2,000 |
-| Total time | ≈3.4 h (12,260 s) |
-| Avg throughput | 0.178 step/s (~5.96 s/step) |
-| Peak VRAM (torch) | gpu0 7.74 / gpu1 7.20 GB (14.94 total) |
-| Final video loss (face) | **0.324** |
-| Final audio loss (voice) | **0.758** |
-| Init time | model load 63.3 s · total 69.8 s |
-| Checkpoints | 8 × 463 MB (steps 250 → 2000) |
-
-<table>
-<tr><td><img src="results/01.jpg" width="256"></td><td><img src="results/02.jpg" width="256"></td><td><img src="results/03.jpg" width="256"></td></tr>
-<tr><td><img src="results/04.jpg" width="256"></td><td><img src="results/05.jpg" width="256"></td><td><img src="results/06.jpg" width="256"></td></tr>
-</table>
-
-*(Placeholders — add your generated images to `results/`.)*
-
-A **Original → Without LoRA → With LoRA** comparison would be the most convincing — add those to `results/` and update the table.
-
-### 2,000-step face + voice test — no tile config in training
-Training screenshots in order, plus the generated video (folder: `results/2000-steps-voice-face-no-tile-config/`).
-
-<table>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/01.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/02.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/03.png" width="256"></td></tr>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/04.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/05.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/06.png" width="256"></td></tr>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/07.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/08.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/09.png" width="256"></td></tr>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/10.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/11.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/12.png" width="256"></td></tr>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/13.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/14.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/15.png" width="256"></td></tr>
-<tr><td><img src="results/2000-steps-voice-face-no-tile-config/16.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/17.png" width="256"></td><td><img src="results/2000-steps-voice-face-no-tile-config/18.png" width="256"></td></tr>
-</table>
-
-**Generated video (face + voice):**
-[▶ `results/2000-steps-voice-face-no-tile-config/video.mp4`](results/2000-steps-voice-face-no-tile-config/video.mp4)
 
 ---
 
