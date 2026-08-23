@@ -269,12 +269,14 @@ The Gemma text encoder is loaded with **8-bit quantization** (much smaller VRAM 
 | Model | What it does | Where it runs |
 |---|---|---|
 | **int4 transformer** (22B → ≈10 GB NF4) | The main video/audio diffusion backbone | sharded across the training GPUs (48 blocks split) |
-| **Gemma-4 text encoder** | Turns your prompt into embeddings | first GPU (8-bit), freed after use |
+| **Gemma-4 text encoder** | Turns your prompt into embeddings | 8-bit (LLM.int8), spread across GPUs 0+1 — only during captioning/generation, then freed |
 | **embeddings_processor / connectors** | Applies video+audio connectors (background, not on any node) | secondary GPU (during preprocessing) |
 | **video VAE** | Encodes your face video → video latents | secondary GPU (during preprocessing) |
 | **audio VAE** | Encodes your voice → audio latents | secondary GPU (during preprocessing) |
 
 The **connectors / embeddings_processor** is **applied offline during dataset preprocessing** (and on CPU during generation) — it turns raw text features into the video (4096-dim) + audio (2048-dim) context the transformer expects. It is **not loaded into GPU VRAM during training** (training uses the precomputed, cached embeddings).
+
+> ⚠️ **The text encoder is a ~26 GB bf16 file, but it works fine on 12 GB cards.** At runtime it is loaded as **8-bit (`bitsandbytes` LLM.int8)** and **spread across GPUs 0 + 1**, used **only during caption encoding and generation**, then **freed**. It is **not loaded during training** — training uses the precomputed cached embeddings. So don't be put off by the 26 GB file size — it fits and runs.
 
 ---
 
@@ -516,6 +518,8 @@ Download these **5 files** into your model folder (the installer tells you exact
 | `ltx-2.5-22b-distilled-bnb-nf4.safetensors` | ≈10.4 GB | `diffusion_models/` |
 | `embeddings_processor_bf16.safetensors` | ≈6.3 GB | `diffusion_models/` |
 | `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈26 GB | `text_encoders/` |
+
+> ⚠️ The ~26 GB text encoder works fine on 12 GB cards — it runs **8-bit (LLM.int8)** spread across **GPUs 0+1**, only during captioning/generation, then freed. Not loaded during training (training uses cached embeddings). *(HF link: to be added.)*
 | `ltx-2.5-video-vae-bf16.safetensors` | ≈1.5 GB | `vae/` |
 | `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.36 GB | `vae/` |
 
