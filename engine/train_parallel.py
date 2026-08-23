@@ -514,6 +514,7 @@ def main():
     finite = True
     peak_vram = {}
     peak_total = 0.0
+    ema_dt = None
     for step in range(N_STEPS):
         t1 = time.time()
         if TRAIN_AUDIO:
@@ -653,8 +654,9 @@ def main():
         dt = time.time() - t1
         now = time.time()
         sps = 1.0 / max(dt, 1e-6)
-        eta = (N_STEPS - step - 1) * (now - t_last)
-        t_last = now
+        # ETA from an EMA of true step time (not the noisy last step, not init-inflated).
+        ema_dt = dt if ema_dt is None else 0.9 * ema_dt + 0.1 * dt
+        eta = (N_STEPS - step - 1) * ema_dt
         # The loss is only computed on the last rank (blocks that produce the output).
         # Broadcast it so every rank reports the REAL loss (not a misleading "nan").
         if rank == world - 1:
