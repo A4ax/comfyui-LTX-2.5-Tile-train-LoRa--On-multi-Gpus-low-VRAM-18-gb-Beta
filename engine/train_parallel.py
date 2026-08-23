@@ -105,6 +105,26 @@ TRAIN_AUDIO = False
 # loaded ONCE at training start to eliminate per-step disk I/O.
 _DS_CACHE = None
 
+# GPU-side cache of each sample's clean latent + condition, built lazily on first
+# use so per-step CPU->GPU copies / permute+reshape are avoided.
+_GPU_CACHE = {}
+
+# Cached video pixel-coords (deterministic given the latent shape); avoids recomputing
+# get_pixel_coords + a fresh patchifier every step.
+_COORDS_CACHE = {}
+
+
+def _video_coords(device_, dtype, lf, lh, lw, fps):
+    key = (str(device_), str(dtype), lf, lh, lw, fps)
+    c = _COORDS_CACHE.get(key)
+    if c is None:
+        p = VideoLatentPatchifier(1)
+        shape = VideoLatentShape(batch=1, channels=CH, frames=lf, height=lh, width=lw)
+        c = get_pixel_coords(p.get_patch_grid_bounds(shape, device=device_), SF, causal_fix=True).to(dtype)
+        c[:, 0, ...] = c[:, 0, ...] / fps
+        _COORDS_CACHE[key] = c.contiguous()
+    return _COORDS_CACHE[key]
+
 
 def _preload_dataset():
     """Load all dataset tensors into RAM once (keyed by sample idx)."""
@@ -196,10 +216,7 @@ def make_modality(device_, dtype, seed=0, lf=None, lh=None, lw=None, seq=None, f
     lh = lh or LH
     lw = lw or LW
     seq = seq or SEQ
-    p = VideoLatentPatchifier(1)
-    shape = VideoLatentShape(batch=1, channels=CH, frames=lf, height=lh, width=lw)
-    coords = get_pixel_coords(p.get_patch_grid_bounds(shape, device=device_), SF, causal_fix=True).to(dtype)
-    coords[:, 0, ...] = coords[:, 0, ...] / fps
+    coords = _video_coords(device_, dtype, lf, lh, lw, fps)
 
     # ---- real data ----
     idx = (seed % NUM_SAMPLES) if NUM_SAMPLES > 0 else seed
@@ -217,7 +234,10 @@ def make_modality(device_, dtype, seed=0, lf=None, lh=None, lw=None, seq=None, f
 
 
 def _load_real_sample(idx, device_, dtype, seq):
-    """Load a real latent + condition for sample `idx` (from RAM cache or disk)."""
+    """Load a real latent + condition for sample `idx` (from GPU/RAM cache or disk)."""
+    g = _GPU_CACHE.get(idx)
+    if g is not None:
+        return g
     e = (_DS_CACHE or {}).get(idx) if _DS_CACHE is not None else None
     if e is not None and e.get("latents") is not None:
         lat = e["latents"]                                                  # (CH,LF,LH,LW)
@@ -228,6 +248,7 @@ def _load_real_sample(idx, device_, dtype, seq):
             ctx = ctx.unsqueeze(0).to(device_, dtype=dtype)
         else:
             ctx = torch.zeros(1, N_CTX, DIM, device=device_, dtype=dtype)
+        _GPU_CACHE[idx] = (x0, ctx)
         return x0, ctx
     base = os.path.join(DATASET_ROOT, "latents", "scenes", f"img_{idx:03d}.pt")
     cbase = os.path.join(DATASET_ROOT, "conditions", "scenes", f"img_{idx:03d}.pt")
@@ -241,6 +262,7 @@ def _load_real_sample(idx, device_, dtype, seq):
         ctx = ctx.unsqueeze(0).to(device_, dtype=dtype)
     else:
         ctx = torch.zeros(1, N_CTX, DIM, device=device_, dtype=dtype)
+    _GPU_CACHE[idx] = (x0, ctx)
     return x0, ctx
 
 
@@ -260,11 +282,7 @@ def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS
     x_t = (1.0 - t) * x0 + t * noise_v
     velocity_v = noise_v - x0
     timesteps_v = torch.full((1, seq), t.item(), device=device_, dtype=dtype)
-    coords = get_pixel_coords(
-        VideoLatentPatchifier(1).get_patch_grid_bounds(
-            VideoLatentShape(batch=1, channels=CH, frames=lf, height=lh, width=lw),
-            device=device_), SF, causal_fix=True).to(dtype)
-    coords[:, 0, ...] = coords[:, 0, ...] / fps
+    coords = _video_coords(device_, dtype, lf, lh, lw, fps)
     mod_v = Modality(enabled=True, latent=x_t, sigma=t, timesteps=timesteps_v,
                      positions=coords.contiguous(), context=ctx, context_mask=None)
 
@@ -489,6 +507,13 @@ def main():
 
     last_loss = float("nan")
     t_last = time.time()
+    # Logging cadence: the finite-check and peak-VRAM gather are pure telemetry, so
+    # only run them every LOG_EVERY steps and cache the last value (removes per-step
+    # GPU->CPU syncs / collectives that stall the pipeline).
+    LOG_EVERY = 10
+    finite = True
+    peak_vram = {}
+    peak_total = 0.0
     for step in range(N_STEPS):
         t1 = time.time()
         if TRAIN_AUDIO:
@@ -508,8 +533,8 @@ def main():
         # ---- per-tile forward + backward, freeing each tile (peak = ONE tile) ----
         # Per-tile loss over the tile's spatial region lets us backprop and FREE each
         # tile's activations before the next, so tiling actually scales VRAM down.
-        loss_v_sum = 0.0
-        loss_a_sum = 0.0
+        loss_v_acc = torch.zeros((), device=device, dtype=torch.float32)
+        loss_a_acc = torch.zeros((), device=device, dtype=torch.float32)
         for ti, tmod in enumerate(tiles):
             base = model.video_args_preprocessor.prepare(tmod, audio_ctx_arg)
             perturbations = BatchedPerturbationConfig.empty(1, model.num_blocks, device, torch.bfloat16)
@@ -532,7 +557,12 @@ def main():
                     a_in = a_in.to(device).requires_grad_(True)
                 a_in.retain_grad()
                 a_args = replace(audio_base, x=a_in)
-            xh, ah = run_shard(model, base, x_in, perturbations, START, END, ckpt=use_ckpt, a=a_args)
+            # Phase C: when tiling is active (>1 tile), per-tile forward already bounds
+            # activation memory, so gradient checkpointing is redundant and only adds Nx
+            # recompute cost. Keep ckpt for the untiled (single-tile) case where it is
+            # what keeps the full-frame activations within VRAM.
+            _ckpt = use_ckpt and len(tiles) <= 1
+            xh, ah = run_shard(model, base, x_in, perturbations, START, END, ckpt=_ckpt, a=a_args)
             if rank < world - 1:
                 dist.send(_comm(xh).contiguous(), rank + 1)
                 if audio_base is not None and ah is not None:
@@ -550,13 +580,13 @@ def main():
                 # are not over-weighted. Sum of weights == 1 for non-overlapping tiles.
                 n_tile = out.shape[1]
                 tile_loss = loss_i * (n_tile / SEQ)
-                loss_v_sum += loss_i.item() * (n_tile / SEQ)
+                loss_v_acc = loss_v_acc + loss_i.detach() * (n_tile / SEQ)
                 if audio_base is not None and ti == 0 and target_a is not None:
                     aout = model._process_output(model.audio_scale_shift_table, model.audio_norm_out,
                                                  model.audio_proj_out, ah, audio_base.embedded_timestep)
                     loss_a_i = torch.nn.functional.mse_loss(aout, target_a)
                     tile_loss = tile_loss + loss_a_i
-                    loss_a_sum = loss_a_i.item()
+                    loss_a_acc = loss_a_acc + loss_a_i.detach()
 
             # ---- backward this tile, then free its activations ----
             if rank == world - 1:
@@ -567,7 +597,7 @@ def main():
                 if audio_base is not None:
                     g_a = a_in.grad if a_in.grad is not None else torch.zeros_like(a_in)
                     dist.send(_comm(g_a, torch.float32).contiguous(), rank - 1)
-                dist.barrier()
+                # NB: no per-tile barrier — the blocking send/recv already orders the ranks.
             else:
                 g = _comm_zeros(xh, torch.float32)
                 dist.recv(g, src=rank + 1)
@@ -593,12 +623,16 @@ def main():
                     if rank > 0:
                         d_a = grads_a[0] if grads_a[0] is not None else torch.zeros_like(a_in)
                         dist.send(_comm(d_a, torch.float32).contiguous(), rank - 1)
-                dist.barrier()
+                # NB: no per-tile barrier — the blocking send/recv already orders the ranks.
 
             # free this tile's retained activations before the next tile (memory scales down)
             del x_in, xh
             if a_in is not None:
                 del a_in, ah
+
+        # Single host sync for loss reporting (accumulated on device across tiles).
+        loss_v_sum = loss_v_acc.item()
+        loss_a_sum = loss_a_acc.item()
 
         # Assemble losses for reporting/telemetry.
         loss_v = None
@@ -610,7 +644,9 @@ def main():
             loss = loss_v if loss_a is None else loss_v + loss_a
         else:
             loss = torch.tensor(float("nan"), device=device, dtype=torch.float32)
-        finite = all(torch.isfinite(p.grad).all().item() for p in trainable_this if p.grad is not None)
+        if step % LOG_EVERY == 0:
+            grads_ = [p.grad for p in trainable_this if p.grad is not None]
+            finite = bool(torch.all(torch.cat([torch.isfinite(g) for g in grads_])).item()) if grads_ else True
         opt.step()
         opt.zero_grad()
         peak = torch.cuda.max_memory_allocated(device) / 1e9
@@ -627,12 +663,13 @@ def main():
             loss_t = torch.tensor([float(last_loss)], device=device)
             dist.broadcast(loss_t, src=world - 1)
             last_loss = loss_t.item()
-        # Per-rank peak VRAM -> per-GPU (rank i -> cuda:i -> gpu{i}); dynamic to world size.
-        peak_local = torch.tensor([torch.cuda.max_memory_allocated(device) / 1e9], device=device if USE_NCCL else torch.device("cpu"))
-        peak_all = [torch.zeros(1, device=device if USE_NCCL else torch.device("cpu")) for _ in range(world)]
-        dist.all_gather(peak_all, peak_local)
-        peak_vram = {f"gpu{i}": round(p.item(), 2) for i, p in enumerate(peak_all)}
-        peak_total = round(sum(p.item() for p in peak_all), 2)
+        # Per-rank peak VRAM -> per-GPU; only every LOG_EVERY steps (cached otherwise).
+        if step % LOG_EVERY == 0:
+            peak_local = torch.tensor([torch.cuda.max_memory_allocated(device) / 1e9], device=device if USE_NCCL else torch.device("cpu"))
+            peak_all = [torch.zeros(1, device=device if USE_NCCL else torch.device("cpu")) for _ in range(world)]
+            dist.all_gather(peak_all, peak_local)
+            peak_vram = {f"gpu{i}": round(p.item(), 2) for i, p in enumerate(peak_all)}
+            peak_total = round(sum(p.item() for p in peak_all), 2)
         if rank == 0:
             print(f"[TR] step {step} tile={tcfg.grid} loss={last_loss:.6f} vram={peak_vram} total={peak_total}GB grads={finite} ({dt:.1f}s)", flush=True)
         # Telemetry file is owned by the last rank.
