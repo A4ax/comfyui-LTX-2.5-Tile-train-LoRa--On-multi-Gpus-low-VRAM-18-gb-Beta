@@ -21,7 +21,8 @@ from dataclasses import replace
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
-sys.path.insert(0, r"D:\LTX-TRAINING\working")
+_ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _ENGINE_DIR)
 from msvc_env import apply_msvc_env  # noqa: E402
 apply_msvc_env()
 os.environ.setdefault("CUDA_DEVICE_ORDER", "PCI_BUS_ID")
@@ -57,15 +58,16 @@ def _comm_zeros(x, dtype):
     return z.cpu() if not USE_NCCL else z
 
 
-sys.path.insert(0, r"D:\LTX-TRAINING\LTX-2\packages\ltx-trainer\src")
-sys.path.insert(0, r"D:\LTX-TRAINING\LTX-2\packages\ltx-core\src")
+_PKG = os.environ.get("LTX_PACKAGES_DIR") or os.path.join(os.path.dirname(_ENGINE_DIR), "packages")
+sys.path.insert(0, os.path.join(_PKG, "ltx-trainer", "src"))
+sys.path.insert(0, os.path.join(_PKG, "ltx-core", "src"))
 
 from ltx_core.components.patchifiers import VideoLatentPatchifier, AudioPatchifier, get_pixel_coords  # noqa: E402
 from ltx_core.model.transformer.modality import Modality  # noqa: E402
 from ltx_core.types import SpatioTemporalScaleFactors, VideoLatentShape, AudioLatentShape  # noqa: E402
 from ltx_core.guidance.perturbations import BatchedPerturbationConfig, PerturbationType  # noqa: E402
 
-sys.path.insert(0, r"D:\LTX-TRAINING\working")
+sys.path.insert(0, _ENGINE_DIR)
 # Read the run config early so we can set the quantization bit-width (2 or 4)
 # BEFORE int4_parallel is imported (it reads LTX_QUANT_BITS at import time).
 _early_cfg = {}
@@ -428,7 +430,8 @@ def main():
     global DATASET_ROOT, NUM_SAMPLES, TRAIN_AUDIO
     TRAIN_AUDIO = bool(cfg.get("train_audio", False))
 
-    DATASET_ROOT = cfg.get("dataset_root", r"D:\LTX-TRAINING\working\dataset")
+    DATASET_ROOT = (cfg.get("dataset_root") or os.environ.get("LTX_DATASET_ROOT")
+                    or os.path.join(os.path.dirname(_ENGINE_DIR), "dataset"))
     # Use the dataset.json sample count (the true dataset), not a count of .pt files,
     # so stale latents left over from earlier runs are never sampled.
     NUM_SAMPLES = 0
