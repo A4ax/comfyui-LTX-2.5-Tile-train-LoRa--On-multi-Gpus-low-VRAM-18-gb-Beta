@@ -105,9 +105,12 @@ TRAIN_AUDIO = False
 # loaded ONCE at training start to eliminate per-step disk I/O.
 _DS_CACHE = None
 
-# GPU-side cache of each sample's clean latent + condition, built lazily on first
-# use so per-step CPU->GPU copies / permute+reshape are avoided.
-_GPU_CACHE = {}
+# GPU-side caches, built lazily. x0 (clean latent) is tiny -> cached on every rank.
+# ctx (~8 MB/sample) is large -> cached on GPU only by the OWNING rank
+# (idx % world == rank) and fetched from the owner via dist each step, so the big
+# ctx cache is SHARED across GPUs instead of duplicated on both.
+_GPU_CACHE_X = {}
+_GPU_CACHE_CTX = {}
 
 # Cached video pixel-coords (deterministic given the latent shape); avoids recomputing
 # get_pixel_coords + a fresh patchifier every step.
@@ -234,36 +237,51 @@ def make_modality(device_, dtype, seed=0, lf=None, lh=None, lw=None, seq=None, f
 
 
 def _load_real_sample(idx, device_, dtype, seq):
-    """Load a real latent + condition for sample `idx` (from GPU/RAM cache or disk)."""
-    g = _GPU_CACHE.get(idx)
-    if g is not None:
-        return g
-    e = (_DS_CACHE or {}).get(idx) if _DS_CACHE is not None else None
-    if e is not None and e.get("latents") is not None:
-        lat = e["latents"]                                                  # (CH,LF,LH,LW)
-        lat = lat.permute(1, 2, 3, 0).reshape(1, seq, CH)                   # (1,seq,CH)
-        x0 = lat.to(device_, dtype=dtype)
-        ctx = e.get("ctx")                                                  # (1024,4096) raw
-        if ctx is not None:
-            ctx = ctx.unsqueeze(0).to(device_, dtype=dtype)
+    """Load a real latent + condition for sample `idx`.
+
+    x0 (tiny clean latent) is cached on every rank's GPU. ctx (~8 MB/sample) is
+    cached on GPU only by the OWNING rank (`idx % world == rank`); other ranks fetch
+    it from the owner via dist each step (transient, not cached), so the large ctx
+    cache is SHARED across the GPUs instead of duplicated on both."""
+    owner = idx % world if world > 1 else 0
+    x0 = _GPU_CACHE_X.get(idx)
+    if x0 is None:
+        e = (_DS_CACHE or {}).get(idx) if _DS_CACHE is not None else None
+        if e is not None and e.get("latents") is not None:
+            lat = e["latents"]                                                  # (CH,LF,LH,LW)
+            x0 = lat.permute(1, 2, 3, 0).reshape(1, seq, CH).to(device_, dtype=dtype)
         else:
-            ctx = torch.zeros(1, N_CTX, DIM, device=device_, dtype=dtype)
-        _GPU_CACHE[idx] = (x0, ctx)
+            base = os.path.join(DATASET_ROOT, "latents", "scenes", f"img_{idx:03d}.pt")
+            ld = torch.load(base, map_location="cpu", weights_only=True)
+            lat = ld["latents"] if isinstance(ld, dict) and "latents" in ld else ld
+            x0 = lat.permute(1, 2, 3, 0).reshape(1, seq, CH).to(device_, dtype=dtype)
+        _GPU_CACHE_X[idx] = x0
+
+    if rank == owner:
+        ctx = _GPU_CACHE_CTX.get(idx)
+        if ctx is None:
+            e = (_DS_CACHE or {}).get(idx) if _DS_CACHE is not None else None
+            cctx = e.get("ctx") if e is not None else None
+            if cctx is None:
+                cbase = os.path.join(DATASET_ROOT, "conditions", "scenes", f"img_{idx:03d}.pt")
+                if os.path.exists(cbase):
+                    cd = torch.load(cbase, map_location="cpu", weights_only=True)
+                    cctx = cd.get("video_prompt_embeds") if isinstance(cd, dict) else None
+            ctx = (cctx.unsqueeze(0).to(device_, dtype=dtype)
+                   if cctx is not None else torch.zeros(1, N_CTX, DIM, device=device_, dtype=dtype))
+            _GPU_CACHE_CTX[idx] = ctx
+        for r in range(world):
+            if r != rank:
+                dist.send(_comm(ctx).contiguous(), r)
         return x0, ctx
-    base = os.path.join(DATASET_ROOT, "latents", "scenes", f"img_{idx:03d}.pt")
-    cbase = os.path.join(DATASET_ROOT, "conditions", "scenes", f"img_{idx:03d}.pt")
-    ld = torch.load(base, map_location="cpu", weights_only=True)
-    lat = ld["latents"] if isinstance(ld, dict) and "latents" in ld else ld   # (CH,LF,LH,LW)
-    lat = lat.permute(1, 2, 3, 0).reshape(1, seq, CH)                          # (1,seq,CH)
-    x0 = lat.to(device_, dtype=dtype)
-    cd = torch.load(cbase, map_location="cpu", weights_only=True)
-    if isinstance(cd, dict) and "video_prompt_embeds" in cd:
-        ctx = cd["video_prompt_embeds"]          # (1024,4096) raw -> connector applied in trainer
-        ctx = ctx.unsqueeze(0).to(device_, dtype=dtype)
     else:
-        ctx = torch.zeros(1, N_CTX, DIM, device=device_, dtype=dtype)
-    _GPU_CACHE[idx] = (x0, ctx)
-    return x0, ctx
+        e = (_DS_CACHE or {}).get(idx) if _DS_CACHE is not None else None
+        cctx = e.get("ctx") if e is not None else None
+        ctx_shape = (1,) + tuple(cctx.shape) if cctx is not None else (1, N_CTX, DIM)
+        proto = torch.zeros(ctx_shape, device=device_, dtype=dtype)
+        buf = _comm_empty(proto)
+        dist.recv(buf, src=owner)
+        return x0, buf.to(device_).to(dtype)
 
 
 def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS):
