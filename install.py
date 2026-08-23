@@ -75,6 +75,67 @@ def _install_torch(py):
     return ok
 
 
+def _cl_detected():
+    """True if MSVC cl.exe / VS Build Tools vcvars is available."""
+    if shutil.which("cl"):
+        return True
+    base = r"C:\Program Files (x86)\Microsoft Visual Studio\2022"
+    for sub in ("BuildTools", "Community", "Professional", "Enterprise"):
+        if os.path.exists(os.path.join(base, sub, "VC", "Auxiliary", "Build", "vcvarsall.bat")):
+            return True
+    return False
+
+
+def _check_env(py, models_root):
+    """Optional --check: verify the install is ready before training. Pass/fail report."""
+    print("\n=== Environment check ===", flush=True)
+    ok_all = True
+    # 1. NVIDIA GPU
+    if _has_nvidia():
+        print("  [PASS] NVIDIA GPU detected", flush=True)
+    else:
+        print("  [FAIL] No NVIDIA GPU - GPU training is unavailable", flush=True)
+        ok_all = False
+    # 2. CUDA-enabled torch
+    try:
+        import subprocess as _sp
+        out = _sp.run([py, "-c", "import torch; print(torch.__version__, torch.cuda.is_available())"],
+                      capture_output=True, text=True, timeout=120).stdout.strip()
+        if "True" in out:
+            print(f"  [PASS] CUDA torch: {out}", flush=True)
+        else:
+            print(f"  [FAIL] torch is not CUDA-enabled: {out}", flush=True)
+            ok_all = False
+    except Exception as e:
+        print(f"  [FAIL] could not run engine python ({e})", flush=True)
+        ok_all = False
+    # 3. Models present
+    dm = os.path.join(models_root, "diffusion_models")
+    te = os.path.join(models_root, "text_encoders")
+    vae = os.path.join(models_root, "vae")
+    need = {
+        "base model": os.path.join(dm, "ltx-2.5-22b-distilled-bnb-nf4.safetensors"),
+        "embeddings_processor": os.path.join(dm, "embeddings_processor_bf16.safetensors"),
+        "text encoder": os.path.join(te, "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"),
+        "video vae": os.path.join(vae, "ltx-2.5-video-vae-bf16.safetensors"),
+        "audio vae": os.path.join(vae, "ltx-2.5-audio-vae-bf16.safetensors"),
+    }
+    for label, p in need.items():
+        if os.path.exists(p):
+            print(f"  [PASS] {label}: {os.path.basename(p)}", flush=True)
+        else:
+            print(f"  [WARN] {label} missing: {p}", flush=True)
+    # 4. VS Build Tools (informational - only needed for int4/quanto backend)
+    if _cl_detected():
+        print("  [INFO] cl.exe / VS Build Tools detected", flush=True)
+    else:
+        print("  [INFO] cl.exe NOT found - fine for the default bnb-NF4 backend (prebuilt bitsandbytes). "
+              "Only needed if you use the int4/quanto backend (install VS 2022 Build Tools, C++ workload, "
+              "or set LTX_VCVARS).", flush=True)
+    print("=== " + ("ALL CHECKS PASS - ready to train" if ok_all else "SOME CHECKS FAILED - see above") + " ===\n", flush=True)
+    return ok_all
+
+
 def main():
     ap = argparse.ArgumentParser(description="O2noor LTX-2.5 Int4 Tile-Train installer")
     ap.add_argument("--python", default=None, help="use an existing python instead of creating a venv")
@@ -83,6 +144,8 @@ def main():
                     help="copy this pack into a ComfyUI custom_nodes folder before setting up")
     ap.add_argument("--model-root", default=None, help="models root (folder containing diffusion_models/ etc.)")
     ap.add_argument("--no-ask", action="store_true", help="don't prompt; use defaults for anything unset")
+    ap.add_argument("--check", action="store_true",
+                    help="verify the install is ready (GPU, CUDA torch, models) without installing")
     a = ap.parse_args()
 
     # Optional: copy this pack (and only this pack) into the target custom_nodes folder.
@@ -121,6 +184,11 @@ def main():
         print("Could not locate/create an engine python. Pass one with --python PATH")
         sys.exit(1)
     print(f"engine python: {py}")
+
+    if a.check:
+        mroot = os.path.abspath(a.model_root) if a.model_root else (pack_config.load_config().get("models_root") or "")
+        _check_env(py, mroot)
+        return
 
     if not a.skip_install:
         # Install torch/torchaudio FIRST (with the correct CUDA vs CPU build) so the

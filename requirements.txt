@@ -6,7 +6,7 @@
 optimum-quanto
 peft
 safetensors
-bitsandbytes
+bitsandbytes==0.50.1
 accelerate
 pyyaml
 ninja
