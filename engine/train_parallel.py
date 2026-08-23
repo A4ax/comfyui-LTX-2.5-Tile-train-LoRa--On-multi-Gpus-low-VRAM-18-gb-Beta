@@ -579,12 +579,9 @@ def main():
                     a_in = a_in.to(device).requires_grad_(True)
                 a_in.retain_grad()
                 a_args = replace(audio_base, x=a_in)
-            # Phase C: when tiling is active (>1 tile), per-tile forward already bounds
-            # activation memory, so gradient checkpointing is redundant and only adds Nx
-            # recompute cost. Keep ckpt for the untiled (single-tile) case where it is
-            # what keeps the full-frame activations within VRAM.
-            _ckpt = use_ckpt and len(tiles) <= 1
-            xh, ah = run_shard(model, base, x_in, perturbations, START, END, ckpt=_ckpt, a=a_args)
+            # Gradient checkpointing ALWAYS follows the Train node's gradient_checkpointing
+            # setting (never auto-disabled by tiling) so VRAM stays bounded on tiled runs.
+            xh, ah = run_shard(model, base, x_in, perturbations, START, END, ckpt=use_ckpt, a=a_args)
             if rank < world - 1:
                 dist.send(_comm(xh).contiguous(), rank + 1)
                 if audio_base is not None and ah is not None:

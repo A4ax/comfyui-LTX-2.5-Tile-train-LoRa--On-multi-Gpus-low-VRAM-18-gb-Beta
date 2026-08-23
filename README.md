@@ -130,7 +130,7 @@ Training screenshots in order, plus the generated video (folder: `results/2000-s
 
 ### 🚀 We made it faster!
 
-After a training-speed pass (removed per-param host stalls, redundant per-tile barriers, per-step telemetry collectives; loss accumulated on device; coords/samples cached; ETA from an EMA; gradient-checkpointing disabled when tiled), the same 2× RTX 3060 512×512 setup runs **much faster**:
+After a training-speed pass (removed per-param host stalls, redundant per-tile barriers, per-step telemetry collectives; loss accumulated on device; coords/samples cached; ETA from an EMA), the same 2× RTX 3060 512×512 setup runs **much faster**:
 
 | Metric | Before | After |
 |---|---:|---:|
@@ -312,7 +312,7 @@ Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted)
 Activates **spatial transformer tiling** for training (for VRAM/experiments):
 - **horizontal_tiles / vertical_tiles** — grid (e.g. `2×2`, `1×3`, `5×6`); `1×1` = off.
 - **overlap** — per-axis tile overlap in latent units (0–16).
-- Applies to the **H×W spatial grid** (note: builds the grid string as `vertical × horizontal`). When tiling is active, gradient-checkpointing is auto-disabled (tiling already bounds activation memory → avoids N× recompute).
+- Applies to the **H×W spatial grid** (note: builds the grid string as `vertical × horizontal`). Gradient-checkpointing always follows the Train node's `gradient_checkpointing` setting (never auto-disabled by tiling).
 
 ### 🧩 `O2noor LTX 2.5 modified version from  kjnodes Chunk FeedForward`
 Low-VRAM FFN chunking for training (returns an `LTX25_MODEL` stamped with `ffn_chunks` / `ffn_dim_threshold`). Splits the feed-forward over the sequence dimension to cut activation peaks.
