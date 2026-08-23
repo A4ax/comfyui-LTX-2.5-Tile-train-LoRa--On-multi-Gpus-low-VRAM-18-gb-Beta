@@ -1,8 +1,8 @@
-# 🎬 LTX-2.5 Int4 Train — 22B LoRA Trainer for ComfyUI (Low-VRAM)
+# 🎬 LTX-2.5 Int4 Train — 22B LoRA Trainer for ComfyUI (Low-VRAM) multi GPUs with cuda ~18GB VRAM
 
-> **A 22B LTX-2.5 transformer can be LoRA-trained on 12 GB-class GPUs** by combining **4-bit NF4 quantization**, **N-GPU block sharding**, **gradient checkpointing** and **activation tiling** — with the resulting LoRA validated on real data.
+> **A 22B LTX-2.5 transformer can be LoRA-trained on 2x 12 GB GPUs** by combining **4-bit NF4 quantization**, **N-GPU block sharding**, **gradient checkpointing** and **activation tiling** — with the resulting LoRA validated on real data.
 >
-> 🧪 **Real-world validation:** a **face + voice** LoRA was trained from **138 images + 37 voice segments + speaking-video clips × 2,000 steps** on **2× RTX 3060 12 GB** using the NF4-sharded engine, then **loaded back into LTX-2.5 and generated with strong identity retention.**
+> 🧪 **Real-world validation:** a **face + voice** LoRA was trained from **138 images + 37 voice / video clips segments each 1s long  × 2,000 steps** on **2× RTX 3060 12 GB** using the NF4-sharded engine, then **loaded back into LTX-2.5 and generated with strong identity retention.**
 
 This project **experimentally enables LoRA fine-tuning of the LTX-2.5 22B *distilled* transformer** (a distilled model intended for an 8-step inference schedule, not the "trainable" full DiT) using a 4-bit NF4 representation and low-VRAM multi-GPU model sharding — all driven from ComfyUI on Windows.
 
@@ -37,13 +37,8 @@ This project **experimentally enables LoRA fine-tuning of the LTX-2.5 22B *disti
 
 ## 🖼️ Real-world LoRA validation
 
-A **face + voice** LoRA was trained from **138 images + 37 voice segments + speaking-video clips** over **2,000 steps** on **2× RTX 3060 12 GB GPUs** using the NF4-sharded training engine. The resulting LoRA was **loaded back into LTX-2.5 and successfully generated** with strong identity retention.
+A **face + voice** LoRA was trained from **138 images + 37 voice segments + speaking-video clips** over **2,000 steps** on **2× RTX 3060 12 GB GPUs** using the NF4-sharded training engine. The resulting LoRA was **loaded back into LTX-2.5 Q6 GGUF and successfully generated** with strong identity retention.
 
-| Original training image | Generated without LoRA | Generated with LoRA |
-|---|---|---|
-| `results/original.jpg` | `results/without_lora.jpg` | `results/with_lora.jpg` |
-
-> 🖼️ *(Placeholders — drop your real before/after images into `results/` and update this table.)*
 
 The purpose of this test was **not** to find the optimal recipe — it was a **proof-of-concept** that the quantized, sharded training path produces a genuinely useful LoRA under extremely limited VRAM and dataset size.
 
@@ -59,8 +54,8 @@ The published validation configuration used:
 | Quantization | BNB NF4 |
 | GPUs | 2× RTX 3060 12 GB |
 | Sharding | 24 / 24 transformer blocks |
-| Resolution | 512×512 |
-| Dataset | 138 images + 37 voice segments + speaking-video clips (face + voice) |
+| Resolution | 512×512x24fps |
+| Dataset 1 | 138 images + 37 voice segments / speaking-video clips (face + voice) |
 | Steps | 2,000 |
 | LoRA rank | 16 |
 | Gradient checkpointing | enabled |
@@ -75,9 +70,9 @@ LTX-2.5 22B distilled transformer · NF4 4-bit · 512×512 training.
 
 | GPU configuration | Blocks/GPU | Measured VRAM / card | Step time |
 |---|---|---:|---:|
-| 1× RTX 3060 12GB | 48 | ≈11.7 GB | ⏱️ *(measure on next run)* |
+| 1× RTX 3060 12GB | 48 | ≈11.7 GB | ⏱️ *(measure coming on next test run )* |
 | 2× RTX 3060 12GB | 24 + 24 | ≈7.2–7.7 GB | ≈5.96 s avg (0.178 step/s) |
-| 3× GPU | 16 + 16 + 16 | ≈4.8 GB | ⏱️ *(measure on next run)* |
+| 3× GPU | 16 + 16 + 16 | ≈4.8 GB | ⏱️ *(measure coming on next test run)* |
 
 > *Measured on this setup; values approximate.* **Theoretical quantized model:** ≈10 GB total. **Measured runtime allocation** (includes shard + overhead): ≈7.2–7.7 GB/card on 2 GPUs, ≈4.8 GB/card on 3 GPUs.
 
@@ -89,7 +84,7 @@ LTX-2.5 22B distilled transformer · NF4 4-bit · 512×512 training.
 
 ## 🖼️ LoRA Results
 
-### 138 images + 37 voice segments + speaking-video clips → 2,000 steps
+### 138 images + 37 voice segments / speaking-video clips → 2,000 steps
 Results generated using the LoRA trained by this project (2× RTX 3060 12 GB, 4-bit NF4, face + voice).
 
 **Measured training outcome (run `ltx25_face_lora_20260822_095830`):**
@@ -144,10 +139,10 @@ After a training-speed pass (removed per-param host stalls, redundant per-tile b
 | Voice clips | ≈6–17 s (varies) | **≈5.6 s** |
 | Throughput | ≈0.178 step/s | **≈0.21 step/s** |
 
-> Measured on a current 1×1 512×512 face+voice run (2000 steps). Speed is data-dependent — image clips (no audio branch) are faster than voice clips (full video+audio). The bottleneck was host→GPU sync stalls and serialization, not the distributed backend — so NCCL vs gloo alone did **not** change speed (see the WSL note below).
+> Measured on a current 1×1 512×512x24fps  face+voice run (2000 steps). Speed is data-dependent — image clips (no audio branch) are faster than voice clips (full video+audio). The bottleneck was host→GPU sync stalls and serialization, not the distributed backend — so NCCL vs gloo alone did **not** change speed (see the WSL note below).
 
 ### 🎞️ Results (1×1 · 2000 steps · face+voice)
-
+in this test I used 23 images and 2 video clips the video clips had background music in them, the voice come out little bit noisier than I thought because I used segment duration 0.7 instead of 1 and this help the steps to go faster. 
 Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
 
 | Metric | Value |
@@ -155,7 +150,7 @@ Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
 | Final video loss (face) | **0.45** |
 | Final audio loss (voice) | **0.764** |
 | Overall step time | **≈4.55 s** (image 2.69 s · voice 5.6 s) |
-| Resolution | 512×512×17 |
+| Resolution | 512×512×17frames |
 
 <table>
 <tr><td><img src="results/1x1-2000-face-voice-2/1.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/2.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/3.png" width="256"></td></tr>
@@ -171,7 +166,7 @@ Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
 
 ## ⚡ NF4 vs. int4 performance observation
 
-> 🧪 *Placeholder — will fill from a dedicated comparison benchmark run.*
+> 🧪 BNB NF4
 
 On the test system, the **BNB NF4** path reached approximately **0.178 step/s (≈5.96 s/step)** under the tested 512×512 configuration, which is dramatically more practical than the much slower **initial custom int4 path**. This suggests the quantization **representation and kernel implementation matter enormously** for real training throughput — not merely the VRAM saved.
 
@@ -310,7 +305,7 @@ Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted)
 - **run_name** — your LoRA's base name.
 - **auto_unique** 🆕 — ON by default: if the output folder exists, it appends a timestamp so **retraining never overwrites the old LoRA**.
 - **steps / lr / rank / alpha / checkpoint_interval** — hyper-params.
-- **gradient_checkpointing** — ON for low VRAM.
+- **gradient_checkpointing** — ON for low VRAM must always stay ON ( OFF Will give OOM on only cuda0 in multi GPUs setup **bug** I need more testing).
 - **tile_config** — optional input from the Tile Config node (below).
 
 ### 🧩 `O2noor LTX 2.5 Int4 Tile Config`
@@ -319,14 +314,14 @@ Activates **spatial transformer tiling** for training (for VRAM/experiments):
 - **overlap** — per-axis tile overlap in latent units (0–16).
 - Applies to the **H×W spatial grid** (note: builds the grid string as `vertical × horizontal`). When tiling is active, gradient-checkpointing is auto-disabled (tiling already bounds activation memory → avoids N× recompute).
 
-### 🧩 `O2noor LTX 2.5 Chunk FeedForward`
+### 🧩 `O2noor LTX 2.5 modified version from  kjnodes Chunk FeedForward`
 Low-VRAM FFN chunking for training (returns an `LTX25_MODEL` stamped with `ffn_chunks` / `ffn_dim_threshold`). Splits the feed-forward over the sequence dimension to cut activation peaks.
 
 ### 📊 `O2noor LTX 2.5 Metrics Dashboard`
 Live dashboard: circular ring, **loss / video loss / audio loss**, **s/step**, **step/s**, **ETA**, **VRAM gpu0/gpu1/total** (bars), **grads**, collapsible **History** chart. Connect its `run` input to the Train node.
 
 ### 🖥️ `O2noor LTX 2.5 System Monitor`
-Live machine dashboard: **every GPU** (memory used/total, utilization, temperature), **system RAM**, and **CPU** — polled every second. Connect its `run` input to the Train node (wiring only). Shows the real numbers `nvidia-smi` reports (includes CUDA context + embeddings processor), unlike the telemetry's PyTorch-only peak.
+Live machine dashboard: **every GPU** (memory used/total, utilization, temperature), **system RAM**, and **CPU** — polled every second. Connect its `run` input to the Train node (wiring only). Shows the real numbers `nvidia-smi` reports (includes CUDA context + embeddings processor), unlike the telemetry's PyTorch-only peak. this node takes run input cosmetic this node doesn’t need to be connect.
 
 ### 🔵 `O2noor LTX 2.5 Progress (Live)` / 📄 `O2noor LTX 2.5 Logs/Outputs` / ℹ️ `O2noor LTX 2.5 Summary (Info)`
 Live ring + loss chart, aligned per-step log (`(vX/aY)` = video/audio loss), and a rich summary (✅ status, run time, final/video/audio loss, VRAM peak, checkpoints, per-model load times).
@@ -349,12 +344,13 @@ Live ring + loss chart, aligned per-step log (`(vX/aY)` = video/audio loss), and
 > 💡 Your **face** comes from the video *and* the images; your **voice** comes from the videos. Video clips train face+voice jointly; image clips reinforce the face.
 
 > 🚀 **Ready to train?** Use the included workflow **`ltx25_int4_face_voice_workflow.json`** — in ComfyUI go to **Workflow → Open** (or drag-drop the file) and it wires up the full face+voice training graph (Load Model → Tile Config → Voice Dataset → Encode Captions → Chunk FeedForward → Train → dashboards). Fill in your dataset and hit **Queue** to start.
-
+to cancel the run you have to close comfyui
+**bug**
 ---
 
 ## 🚀 Installation (clone → install → models → run)
 
-The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (vendored `ltx-core`/`ltx-trainer`), `nodes/`, `web/`, and the installer are all at the repo root. Nothing is hardcoded to any machine.
+The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (vendored `ltx-core`/`ltx-trainer`), `nodes/`, `web/`, and the installer are all at the repo root. 
 
 **Easiest (recommended):** in ComfyUI-Manager → **Install Custom Nodes → Install via Git URL**, paste this repo's URL. It clones into `custom_nodes/` and **auto-loads**. Then run the installer below.
 
@@ -363,17 +359,17 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
 2. **Install ComfyUI** (comfy.org).
 3. **Copy this folder** into ComfyUI's `custom_nodes/`:
    ```bat
-   xcopy /E O2noor-comfyui-ltx25-tile-train-Beta D:\ComfyUI\custom_nodes\O2noor-comfyui-ltx25-tile-train-Beta\
+   xcopy /E O2noor-comfyui-ltx25-tile-train-Beta C/D:\ComfyUI\custom_nodes\O2noor-comfyui-ltx25-tile-train-Beta\
    ```
 4. **Run the installer** (creates the engine venv, installs deps, writes `config.json`):
    - **Double-click `install.bat`** (auto-detects ComfyUI's Python), **or** run:
    ```bat
-   cd D:\ComfyUI\custom_nodes\O2noor-comfyui-ltx25-tile-train-Beta
+   cd C/D:\ComfyUI\custom_nodes\o2noor-comfyui-ltx25-tile-train-Beta
    python install.py
    ```
    - If the machine has **only ComfyUI** (no standalone Python), use ComfyUI's bundled Python:
    ```bat
-   "D:\ComfyUI\.venv\Scripts\python.exe" install.py
+   "C/D:\ComfyUI\.venv\Scripts\python.exe" install.py
    ```
    - The installer **auto-detects your GPU**: on an **NVIDIA** machine it installs **CUDA-enabled PyTorch** (cu124); otherwise CPU-only (with a warning that GPU training is unavailable).
    GPUs are **auto-detected** — no GPU config needed. Use the Tile Config node only if you want a custom split.
@@ -398,10 +394,10 @@ If you want **faster GPU→GPU communication**, the engine can run inside **WSL2
 > ⚠️ **Measured note:** in testing, enabling NCCL/WSL gave **no observed speedup** — the training bottleneck was **host→GPU sync stalls and per-step serialization**, not the distributed backend's bandwidth (the per-step comm volume is tiny). The speedups came from the training-pass fixes (see "We made it faster!"). So `use_wsl` is **optional** — only use it if it happens to help on your hardware. Speed is the same either way on this setup.
 
 - **`use_wsl = OFF`** → the normal native-Windows engine (gloo), as before.
-- **`use_wsl = ON`** → the engine launches via WSL2 with **NCCL** (faster multi-GPU communication). All paths are auto-translated from `D:\…` to `/mnt/d/…` — nothing is hardcoded.
+- **`use_wsl = ON`** → the engine launches via WSL2 with **NCCL** (faster multi-GPU communication). All paths are auto-translated from `C/D:\…` to `/mnt/d/…` .
 
 ### One-time WSL setup (needed for `use_wsl = ON`)
-1. **Install WSL2** (admin PowerShell):
+1. **Install WSL2** :
    ```bat
    wsl --install
    ```
@@ -430,18 +426,18 @@ If you want **faster GPU→GPU communication**, the engine can run inside **WSL2
 
 ### ✅ Do
 - Use **`segment_duration = 1.0`** for voice.
-- Use a **longer speaking video** (30 s–2 min) so the voice has enough to learn.
+- Use a **longer speaking video** (30 s–1 min) so the voice has enough to learn.
 - **Vary the background** — otherwise the LoRA memorizes one background instead of your face/voice.
 - Keep **`auto_unique = ON`**.
 - Use **`gradient_checkpointing = ON`** on 12 GB cards.
 - Make sure your face is **visible AND speaking** (lip-synced) for a voice+face LoRA.
-
+- **100 examples** keep your data set examples under 200, recommended **100**
 ### ❌ Don't
 - Don't train the voice from only a few seconds of audio.
 - Don't use a single fixed background.
 - Don't set `frames` (via `segment_duration`) to a non-`8k+1` value.
 - Don't expect a voice-only LoRA to add new words — the **script** still comes from the prompt; the LoRA makes the generated voice **sound like you**.
-- Don't edit the official `process_videos.py` in the vendored `ltx-trainer`.
+- Don't edit the official `process_videos.py` in the vendored `ltx-trainer`. ( it will break)
 
 > ℹ️ The trainer **supports joint video + audio LoRA training** — a single LoRA can learn visual identity and voice characteristics from synchronized speaking-video data. Whether a particular dataset/config produces a *useful* voice+face LoRA is an **empirical result**, not a guarantee.
 
@@ -481,9 +477,7 @@ Extending the tiling system to **2×2, 3×3 … 6×6 spatial tiling** with confi
 
 **Result:** 2×2 tiling trains a face+voice LoRA comfortably within 2× 12 GB and converges the **voice/audio branch cleanly** (1.19 → 0.90). The **face/video branch** stayed in the ~2–3 range — noisier at 512×512. Both branches share a single LoRA; the audio branch clearly learns.
 
-**Generation samples** (images + video) from this LoRA — *(to be added to `results/tiling-2x2-1500/`)*.
-
-> ⚠️ **Caveat (learned after this run):** the documented 2×2 run trained with `normalize_positions=True`, which **rebased every tile's RoPE to position 0** — that produced a train/inference position mismatch and **noisy/static video** at generation (voice stayed clean because audio isn't tiled). The ~2.4 reported "video loss" was also a **sum-of-tiles artifact** (per-tile it was healthy ~0.6). The fix — **`normalize_positions=False`** (keep absolute tile positions) — is now the default in the engine. So 2×2 and arbitrary grids (1×3, 3×2, 5×6) train with correct orientation and positions; always **verify generation quality** per grid.
+> ⚠️ **Caveat (learned after this run):** the documented 2×2 run trained with `normalize_positions=True`, which **rebased every tile's RoPE to position 0** — that produced a train/inference position mismatch and **noisy/static video** at generation (voice stayed clean because audio isn't tiled). The ~2.4 reported "video loss" was also a **sum-of-tiles artifact** (per-tile it was healthy ~0.6). The fix — **`normalize_positions=False`** (keep absolute tile positions) — is now the default in the engine. So 2×2 and arbitrary grids (1×3, 3×2, 5×6) train with correct orientation and positions; always **verify generation quality** per grid. I did not test the results yet, if you test it please let me know the result **start with small steps ~50** 
 
 ### 🔜 Experimental block streaming (future work)
 Dynamic transformer-block streaming — a GPU keeps a working set of blocks and replaces completed ones with upcoming ones (reduce peak VRAM, keep the GPU busy). **Experimental until benchmarked.**
@@ -548,7 +542,6 @@ This repository contains **two distinct things**:
 
 ➡️ **Before downloading, redistributing, or commercially using the weights or any LoRA produced with this tool, review the [full LTX-2.x Community License](https://github.com/Lightricks/LTX-2/blob/main/LICENSE.md) and its Attachment A.** If you are unsure whether your intended use or redistribution is permitted, contact Lightricks to confirm.
 
-> ℹ️ **Recommendation:** rather than hosting the ~10 GB quantized weights directly, you may prefer to distribute the **conversion/quantization scripts** (included here) and link users to the official weights — this reduces the redistribution surface while still being a complete, working project. If you do host the weights or LoRAs, attach the license terms + Attachment A as described above.
 
 ---
 
