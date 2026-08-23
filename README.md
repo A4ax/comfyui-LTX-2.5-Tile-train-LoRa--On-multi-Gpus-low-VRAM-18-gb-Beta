@@ -507,17 +507,17 @@ The **engineering contribution** is combining these into a working LTX-2.5 train
 
 Download these **5 files** into your model folder (the installer tells you exactly where). The base model is **fully self-contained** — the connectors/aux layers are already merged inside it, so **no separate `connectors_bf16.safetensors` and no quantized cache folders are needed**.
 
+**Download:** [Hugging Face — LTX-2.5 Int4 Tile-Train models](https://huggingface.co/o2noor/O2noor-comfyui-ltx25-tile-train-Beta)
+
 | File | Size | Put in |
 |---|---|---|
 | `ltx-2.5-22b-distilled-bnb-nf4.safetensors` | ≈10.4 GB | `diffusion_models/` |
 | `embeddings_processor_bf16.safetensors` | ≈6.3 GB | `diffusion_models/` |
 | `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈26 GB | `text_encoders/` |
-
-> ⚠️ The ~26 GB text encoder works fine on 12 GB cards — it runs **8-bit (LLM.int8)** spread across **GPUs 0+1**, only during captioning/generation, then freed. Not loaded during training (training uses cached embeddings). *(HF link: to be added.)*
 | `ltx-2.5-video-vae-bf16.safetensors` | ≈1.5 GB | `vae/` |
 | `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.36 GB | `vae/` |
 
-> **Prebuilt quantized weights:** See the Hugging Face repository linked below *(you'll add the real link)*.
+> ⚠️ The ~26 GB text encoder works fine on 12 GB cards — it runs **8-bit (LLM.int8)** spread across **GPUs 0+1**, only during captioning/generation, then freed. Not loaded during training (training uses cached embeddings).
 >
 > ⚠️ These weights are **derivatives of LTX-2.5** and remain subject to the **LTX-2.x Community License + Attachment A** — see [Licensing](#️-licensing--model-redistribution).
 
