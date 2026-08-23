@@ -566,3 +566,16 @@ This repository contains **two distinct things**:
 
 - LTX-2.5 by Lightricks. `ltx-core` / `ltx-trainer` under their respective licenses.
 - This pack is an independent training tool. Models follow their own licenses (see **Licensing**).
+
+---
+
+## ☕️ Support this project
+
+If this tool saved you hours (or gigabytes of VRAM headaches) training your own
+LTX-2.5 LoRAs — and especially if you'd like to help the person behind it finally
+afford their own AI subscription 😄 — a coffee or two goes a long way.
+
+Every bit helps keep development, testing, and new features coming. Thanks for
+using the pack — happy training! 🎬
+
+[☕️ Buy me a coffee](https://paypal.me/o2noora4ax)
