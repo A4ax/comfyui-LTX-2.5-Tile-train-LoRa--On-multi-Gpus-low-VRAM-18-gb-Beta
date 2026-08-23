@@ -1,7 +1,8 @@
 # LTX-2.5 Int4 Tile-Train training engine dependencies.
-# These go in the ENGINE venv (not ComfyUI's own venv) — install.py handles this.
-torch>=2.4
-torchaudio
+# These go in the ENGINE venv (not ComfyUI's own venv) ??" install.py handles this.
+# NOTE: torch + torchaudio are NOT listed here - install.py installs them with the
+# correct build (CUDA-enabled when an NVIDIA GPU is detected, else CPU-only), so a
+# fresh user never ends up with a CPU-only torch on a CUDA machine.
 optimum-quanto
 peft
 safetensors

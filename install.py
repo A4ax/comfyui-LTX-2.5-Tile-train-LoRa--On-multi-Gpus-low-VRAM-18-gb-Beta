@@ -48,6 +48,33 @@ def _pip(py, args):
     return True
 
 
+def _has_nvidia():
+    """True if an NVIDIA GPU is present (nvidia-smi runs OK)."""
+    try:
+        import subprocess as _sp
+        r = _sp.run(["nvidia-smi"], capture_output=True, text=True, timeout=10)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _install_torch(py):
+    """Install torch + torchaudio with the CORRECT build.
+    NVIDIA GPU present -> CUDA-enabled torch from the PyTorch CUDA index (so a fresh
+    machine never ends up with CPU-only torch). Otherwise -> default (CPU) torch."""
+    if not _has_nvidia():
+        print("No NVIDIA GPU detected - installing CPU-only PyTorch (GPU training unavailable).", flush=True)
+        ok = _pip(py, ["install", "torch", "torchaudio"])
+        return ok
+    print("NVIDIA GPU detected - installing CUDA-enabled PyTorch (cu124)...", flush=True)
+    ok = _pip(py, ["install", "torch", "torchaudio",
+                   "--index-url", "https://download.pytorch.org/whl/cu124"])
+    if not ok:
+        print("CUDA torch install failed; falling back to default (CPU) torch.", flush=True)
+        ok = _pip(py, ["install", "torch", "torchaudio"])
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser(description="O2noor LTX-2.5 Int4 Tile-Train installer")
     ap.add_argument("--python", default=None, help="use an existing python instead of creating a venv")
@@ -95,9 +122,13 @@ def main():
         sys.exit(1)
     print(f"engine python: {py}")
 
-    if not a.skip_install and os.path.exists(os.path.join(work_dir, "requirements.txt")):
-        print("Installing engine requirements (this may take a while)...")
-        _pip(py, ["install", "-r", os.path.join(work_dir, "requirements.txt")])
+    if not a.skip_install:
+        # Install torch/torchaudio FIRST (with the correct CUDA vs CPU build) so the
+        # rest of the requirements (bitsandbytes etc.) resolve against the right torch.
+        _install_torch(py)
+        if os.path.exists(os.path.join(work_dir, "requirements.txt")):
+            print("Installing engine requirements (this may take a while)...")
+            _pip(py, ["install", "-r", os.path.join(work_dir, "requirements.txt")])
 
     # Write config.json (paths resolve relative to the installed pack folder).
     cfg = pack_config.load_config()
