@@ -53,6 +53,8 @@ def resolve_tiling(grid: str, overlap: int, latent_h: int, latent_w: int) -> Til
     if not cfg.is_tiled():
         return cfg
     rows, cols = cfg.grid_dims()
+    if rows > latent_h or cols > latent_w:
+        raise ValueError(f"tile grid {rows}x{cols} exceeds latent {latent_h}x{latent_w}")
     th = (latent_h + rows - 1) // rows
     tw = (latent_w + cols - 1) // cols
     # clamp overlap to < tile size so trapezoidal masks stay valid
