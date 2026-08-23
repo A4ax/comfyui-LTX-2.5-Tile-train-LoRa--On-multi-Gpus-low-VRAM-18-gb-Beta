@@ -646,7 +646,7 @@ def main():
             loss = torch.tensor(float("nan"), device=device, dtype=torch.float32)
         if step % LOG_EVERY == 0:
             grads_ = [p.grad for p in trainable_this if p.grad is not None]
-            finite = bool(torch.all(torch.cat([torch.isfinite(g) for g in grads_])).item()) if grads_ else True
+            finite = bool(torch.all(torch.cat([torch.isfinite(g).reshape(-1) for g in grads_])).item()) if grads_ else True
         opt.step()
         opt.zero_grad()
         peak = torch.cuda.max_memory_allocated(device) / 1e9
