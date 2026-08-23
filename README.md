@@ -578,4 +578,4 @@ afford their own AI subscription 😄 — a coffee or two goes a long way.
 Every bit helps keep development, testing, and new features coming. Thanks for
 using the pack — happy training! 🎬
 
-[☕️ Buy me a coffee](https://paypal.me/o2noora4ax)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?style=for-the-badge&logo=paypal&logoColor=black)](https://paypal.me/o2noora4ax)
