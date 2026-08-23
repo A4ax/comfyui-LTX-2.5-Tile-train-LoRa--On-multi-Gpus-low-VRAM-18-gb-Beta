@@ -103,12 +103,33 @@ After a training-speed pass (removed per-param host stalls, redundant per-tile b
 
 | Metric | Before | After |
 |---|---:|---:|
-| Step time (overall) | ≈5.96 s | **≈4.75 s** |
-| Image clips | — | **≈2.67 s** |
+| Step time (overall) | ≈5.96 s | **≈4.55 s** |
+| Image clips | — | **≈2.69 s** |
 | Voice clips | ≈6–17 s (varies) | **≈5.6 s** |
 | Throughput | ≈0.178 step/s | **≈0.21 step/s** |
 
 > Measured on a current 1×1 512×512 face+voice run (2000 steps). Speed is data-dependent — image clips (no audio branch) are faster than voice clips (full video+audio). The bottleneck was host→GPU sync stalls and serialization, not the distributed backend — so NCCL vs gloo alone did **not** change speed (see the WSL note below).
+
+### 🎞️ Results (1×1 · 2000 steps · face+voice)
+
+Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
+
+| Metric | Value |
+|---|---|
+| Final video loss (face) | **0.45** |
+| Final audio loss (voice) | **0.764** |
+| Overall step time | **≈4.55 s** (image 2.69 s · voice 5.6 s) |
+| Resolution | 512×512×17 |
+
+<table>
+<tr><td><img src="results/1x1-2000-face-voice-2/1.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/2.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/3.png" width="256"></td></tr>
+<tr><td><img src="results/1x1-2000-face-voice-2/4.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/5.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/6.png" width="256"></td></tr>
+<tr><td><img src="results/1x1-2000-face-voice-2/8.png" width="256"></td><td><img src="results/1x1-2000-face-voice-2/9.jpg" width="256"></td></tr>
+</table>
+
+**Generated video:** [`10.mp4`](results/1x1-2000-face-voice-2/10.mp4)
+
+<video src="results/1x1-2000-face-voice-2/10.mp4" controls width="512"></video>
 
 ---
 
