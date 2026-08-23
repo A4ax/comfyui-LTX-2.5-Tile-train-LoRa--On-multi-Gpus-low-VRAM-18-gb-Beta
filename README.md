@@ -507,7 +507,7 @@ The **engineering contribution** is combining these into a working LTX-2.5 train
 
 Download these **5 files** into your model folder (the installer tells you exactly where). The base model is **fully self-contained** — the connectors/aux layers are already merged inside it, so **no separate `connectors_bf16.safetensors` and no quantized cache folders are needed**.
 
-**Download:** [Hugging Face — LTX-2.5 Int4 Tile-Train models](https://huggingface.co/o2noor/O2noor-comfyui-ltx25-tile-train-Beta)
+**Download:** [Hugging Face — LTX-2.5 Int4 Tile-Train models](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta)
 
 | File | Size | Put in |
 |---|---|---|
