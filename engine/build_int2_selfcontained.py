@@ -49,7 +49,12 @@ def main():
     cfg_path = os.path.join(cache, "config.json")
     if os.path.exists(cfg_path):
         with open(cfg_path, encoding="utf-8") as fh:
-            meta = {"int4_config": fh.read()}
+            _cfg = json.load(fh)
+        # config.json is itself {"int4_config": {...}}; embed the INNER dict
+        # (config/license/model_version/gemma_source_checkpoint) so the loader's
+        # create_meta_model reads meta["config"]["transformer"] correctly.
+        _inner = _cfg.get("int4_config", _cfg) if isinstance(_cfg, dict) else {}
+        meta = {"int4_config": json.dumps(_inner)}
     else:
         print("[V2i2] WARNING: config.json not found in cache - output will have no int4_config metadata", flush=True)
 
