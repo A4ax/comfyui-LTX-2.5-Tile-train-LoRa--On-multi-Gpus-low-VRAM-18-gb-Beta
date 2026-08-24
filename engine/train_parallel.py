@@ -485,7 +485,11 @@ def main():
     lora_setup_s = time.time() - t0
     trainable_this = [p for p in model.parameters() if p.requires_grad]
     t0 = time.time()
-    opt = torch.optim.AdamW(trainable_this, lr=LR)
+    try:
+        import bitsandbytes as _bnb
+        opt = _bnb.optim.AdamW8bit(trainable_this, lr=LR)
+    except Exception:
+        opt = torch.optim.AdamW(trainable_this, lr=LR)
     optimizer_s = time.time() - t0
     total_init_s = time.time() - t_init
     print(f"[TR] rank{rank} LoRA {sum(p.numel() for p in trainable_this)/1e6:.1f}M "

@@ -326,6 +326,16 @@ def load_text_encoder(
 
     torch_device = _to_torch_device(device)
 
+    # qint2 (2-bit) self-contained text encoder -> dedicated GPU loader.
+    from ltx_trainer.gemma_int2 import _is_qint2_te_file, load_gemma_int2
+    if _is_qint2_te_file(str(gemma_model_path)):
+        return load_gemma_int2(str(gemma_model_path), torch_device, dtype)
+
+    # NF4 (bnb 4-bit) self-contained text encoder -> dedicated GPU loader.
+    from ltx_trainer.gemma_nf4 import _is_nf4_te_file, load_gemma_nf4
+    if _is_nf4_te_file(str(gemma_model_path)):
+        return load_gemma_nf4(str(gemma_model_path), torch_device, dtype)
+
     gemma_weight_paths = resolve_gemma_weight_paths(str(gemma_model_path))
     gemma_sd_ops, gemma_module_ops = get_gemma_ops(str(gemma_model_path))
 
@@ -380,6 +390,13 @@ def load_embeddings_processor(
         if isinstance(checkpoint_path, (list, tuple))
         else str(checkpoint_path)
     )
+    # qint2 (2-bit) feature-extractor projections stored in the packed TE file.
+    from ltx_trainer.gemma_int2 import _is_qint2_te_file, load_embeddings_processor_qint2
+    if _is_qint2_te_file(str(gemma_model_path)):
+        return load_embeddings_processor_qint2(
+            paths if isinstance(paths, tuple) else (paths,),
+            str(gemma_model_path), torch_device, dtype)
+
     return SingleGPUModelBuilder(
         model_path=paths,
         model_class_configurator=EmbeddingsProcessorConfigurator.with_gemma_model_path(str(gemma_model_path)),

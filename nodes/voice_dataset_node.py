@@ -52,6 +52,16 @@ def _gemma_device(device, fallback="0"):
     return {"gpu0": "0", "gpu1": "1", "gpu2": "2"}.get(device, fallback)
 
 
+def _auto_gpus():
+    """List all available CUDA devices as a comma string (never hardcode 0,1)."""
+    try:
+        import torch as _t
+        n = _t.cuda.device_count() if _t.cuda.is_available() else 0
+        return ",".join(str(i) for i in range(max(1, n)))
+    except Exception:
+        return "0"
+
+
 def _video_duration(path):
     """Probe video duration in seconds by parsing ffmpeg's `Duration:` line."""
     try:
@@ -160,6 +170,9 @@ class O2noorLTX25Int4VoiceDataset:
         cap_src = captions.get("output_dir") if captions else None
         if cap_src and not os.path.exists(os.path.join(cap_src, "index.json")):
             cap_src = None
+        # Text-encoder GPUs flow from the O2noorLTX25Int4EncodeCaptions node when wired;
+        # otherwise auto-detect all available GPUs (never hardcode to GPU0/GPU1).
+        te_gpus = (captions or {}).get("gpus") or _auto_gpus()
         _dc = model.get("device_config") or {}
         # Device placement comes from the LoadModel node (video_vae/audio_vae); fall back to auto.
         dev = _dev_choice(_dc.get("video_vae"), engine_driver.pick_device("auto"))
@@ -317,8 +330,6 @@ class O2noorLTX25Int4VoiceDataset:
         # 3) captions -> conditions (video + audio prompt embeds) on the GPUs.
         cap_out = os.path.join(output_dir, "conditions")
         os.makedirs(cap_out, exist_ok=True)
-        _tec = _dc.get("text_encoder") or {}
-        _te_gpus = [_gemma_device(_tec.get("device"))]
         if cap_src is None:
             cap_src = os.path.join(output_dir, "captions_cache")
             rc, tail = engine_driver.run_engine("encode_captions.py", [
@@ -326,7 +337,7 @@ class O2noorLTX25Int4VoiceDataset:
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
                 "--captions", trigger_word,
                 "--out-dir", cap_src,
-                "--gpus", ",".join(_te_gpus),
+                "--gpus", te_gpus,
                 "--connectors-device", _dc.get("connectors") or "gpu0",
                 "--load-times", lt_path])
             log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")
@@ -352,12 +363,11 @@ class O2noorLTX25Int4VoiceDataset:
         #     (once) so the training engine does NOT load the embeddings processor on the
         #     GPUs -> keeps training VRAM at face-only levels (no OOM).
         if use_audio:
-            ep_dev = _dev_choice(_dc.get("audio_vae"), dev)
             rc, tail = engine_driver.run_engine("precompute_audio_embeds.py", [
                 "--conditions-dir", cap_out,
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
                 "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
-                "--device", ep_dev,
+                "--gpus", te_gpus,
                 "--load-times", lt_path])
             log_parts.append(f"[audio] precompute embeds rc={rc}\n{tail}")
             if rc != 0:

@@ -164,6 +164,27 @@ Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
 
 ---
 
+## 🧩 New: 2-bit (int2) base + qint2 text encoder (low-VRAM modules)
+
+Two **2-bit** modules are now available as **optional** alternatives — the **bnb-NF4 base + 8-bit Gemma remain the recommended default** for quality.
+
+| Module | File | Size | Purpose |
+|---|---|---|---|
+| **2-bit base** 🆕 | `ltx-2.5-22b-distilled-int2-main-v2.safetensors` | ≈5.36 GB | Self-contained 2-bit transformer (loads directly via `load_int4_shard`; `QUANT_BITS=2` auto-detected from the filename) |
+| **2-bit text encoder** 🆕 | `gemma4-12b-with-proj-ltx-2.5-qint2.safetensors` | ≈5.54 GB | Self-contained **quanto qint2** (2-bit) Gemma-4 — a drop-in text encoder that loads straight onto the GPUs |
+| **NF4 text encoder** 🆕 | `gemma4-12b-with-proj-ltx-2.5-bnb-nf4.safetensors` | ≈10 GB | **bnb NF4** (4-bit) Gemma-4 text encoder (same loader family) |
+
+**How they load:** `model_loader` auto-detects `qint2` / `NF4` (and `QUANT_BITS`) from the file, so these are drop-ins on the **Load Model / Encode Captions** nodes. The text-encoder GPUs are taken from the **Encode Captions `gpus`** setting (see node docs).
+
+**Measured on this setup:**
+- **qint2 text encoder** — loads **on GPU (no CPU phase)**, caption encode ≈17 s, text-encoder VRAM ≈5.6 GB + embeddings processor ≈4.75 GB, on the GPU(s) you set in **Encode Captions**.
+- **int2 base** — the ≈5.36 GB file is the whole self-contained transformer; 2-bit storage keeps per-rank weights tiny. A 2-GPU 2-step smoke run: **peak (torch) gpu0 ≈3.8 / gpu1 ≈3.6 GB**, and **audio loss 2.09 → 1.80** over 2 steps (LoRA learning, finite gradients).
+- **Quality caveat:** 2-bit is **lower quality than 4-bit**. int4 (bnb NF4) is the recommended base for a final LoRA; **int2 / qint2** are for the tightest VRAM budget or fastest iteration.
+
+> ⚠️ **quanto qint2** must run under `torch.no_grad()` (not `inference_mode`) — the engine already uses `no_grad`, so qint2 works end-to-end.
+
+---
+
 ## ⚡ NF4 vs. int4 performance observation
 
 > 🧪 BNB NF4
@@ -300,12 +321,15 @@ The **face-only** dataset builder (upload face images) — the original.
 
 ### 📝 `O2noor LTX 2.5 Int4 Encode Captions`
 Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted).
+- **gpus** — which GPU(s) the text encoder runs on. **This now propagates to the whole text-encoder path** (encode *and* the audio precompute step inside the Voice Dataset node), so the **qint2 / 8-bit Gemma follows exactly what you set here** — no hardcoded GPU0/1, no fallback to another card. e.g. `0,1` = the two 3060s, `2` = the third GPU.
 
 ### 🚀 `O2noor LTX 2.5 Int4 Train`
 - **run_name** — your LoRA's base name.
 - **auto_unique** 🆕 — ON by default: if the output folder exists, it appends a timestamp so **retraining never overwrites the old LoRA**.
 - **steps / lr / rank / alpha / checkpoint_interval** — hyper-params.
 - **gradient_checkpointing** — ON for low VRAM must always stay ON ( OFF Will give OOM on only cuda0 in multi GPUs setup **bug** I need more testing).
+- **Optimizer** 🆕 — the LoRA is trained with **8-bit AdamW** (bitsandbytes) → smaller optimizer-state VRAM and a slightly lower peak.
+- **Per-rank aux placement** 🆕 — the large bf16 output projections (`proj_out` / `audio_proj_out`) now live **only on the last rank** (not duplicated on every GPU), balancing VRAM and lowering cuda0's peak. `patchify_proj` stays on every rank (all ranks use the input preprocessor).
 - **tile_config** — optional input from the Tile Config node (below).
 
 ### 🧩 `O2noor LTX 2.5 Int4 Tile Config`
@@ -510,7 +534,7 @@ The **engineering contribution** is combining these into a working LTX-2.5 train
 
 ## 📦 Models (Hugging Face)
 
-Download these **5 files** into your model folder (the installer tells you exactly where). The base model is **fully self-contained** — the connectors/aux layers are already merged inside it, so **no separate `connectors_bf16.safetensors` and no quantized cache folders are needed**.
+Download these **5 core files** into your model folder (the installer tells you exactly where). The base model is **fully self-contained** — the connectors/aux layers are already merged inside it, so **no separate `connectors_bf16.safetensors` and no quantized cache folders are needed**. The **3 optional 2-bit/NF4 modules** at the bottom of the table are drop-in alternatives (see the *"2-bit (int2) base + qint2 text encoder"* section above).
 
 **Download:** [Hugging Face — LTX-2.5 Int4 Tile-Train models](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta)
 
@@ -521,6 +545,9 @@ Download these **5 files** into your model folder (the installer tells you exact
 | `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈26 GB | `text_encoders/` |
 | `ltx-2.5-video-vae-bf16.safetensors` | ≈1.5 GB | `vae/` |
 | `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.36 GB | `vae/` |
+| **`ltx-2.5-22b-distilled-int2-main-v2.safetensors`** 🆕 | ≈5.36 GB | `diffusion_models/` *(optional 2-bit base)* |
+| **`gemma4-12b-with-proj-ltx-2.5-qint2.safetensors`** 🆕 | ≈5.54 GB | `text_encoders/` *(optional 2-bit TE)* |
+| **`gemma4-12b-with-proj-ltx-2.5-bnb-nf4.safetensors`** 🆕 | ≈10 GB | `text_encoders/` *(optional NF4 TE)* |
 
 > ⚠️ The ~26 GB text encoder works fine on 12 GB cards — it runs **8-bit (LLM.int8)** spread across **GPUs 0+1**, only during captioning/generation, then freed. Not loaded during training (training uses cached embeddings).
 >

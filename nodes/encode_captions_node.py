@@ -65,6 +65,6 @@ class O2noorLTX25Int4EncodeCaptions:
             ok = True
             tail = "cache exists — reused (set overwrite to re-encode)"
 
-        cap = {"output_dir": output_dir, "index_path": index_path, "ok": ok, "tail": tail}
+        cap = {"output_dir": output_dir, "index_path": index_path, "ok": ok, "tail": tail, "gpus": gpus}
         print(f"[O2noorLTX25Int4EncodeCaptions] done ok={ok}", flush=True)
         return (cap,)

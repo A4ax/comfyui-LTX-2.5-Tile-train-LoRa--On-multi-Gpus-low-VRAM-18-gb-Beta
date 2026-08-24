@@ -174,13 +174,21 @@ def main():
     t0 = time.time()
 
     _t = time.time()
-    te = load_gemma_8bit_gpu(args.text_encoder)
+    from ltx_trainer.gemma_int2 import _is_qint2_te_file  # noqa: E402
+    from ltx_trainer.gemma_nf4 import _is_nf4_te_file  # noqa: E402
+    if _is_qint2_te_file(args.text_encoder) or _is_nf4_te_file(args.text_encoder):
+        # Quantized (qint2/NF4) self-contained text encoders -> dedicated GPU loader.
+        from ltx_trainer.model_loader import load_text_encoder  # noqa: E402
+        te = load_text_encoder(args.text_encoder, device=f"cuda:{LOAD_GPUS[0]}", dtype=torch.bfloat16)
+    else:
+        # Plain 8-bit bf16 Gemma spread across the GPUs (default).
+        te = load_gemma_8bit_gpu(args.text_encoder)
     record(args.load_times, "text_encoder", time.time() - _t)
 
     hidden = []
     _dcmap = {"gpu0": "cuda:0", "gpu1": "cuda:1", "gpu2": "cuda:2", "cpu": "cpu"}
     proc_dev = _dcmap.get(args.connectors_device) or f"cuda:{LOAD_GPUS[0]}"
-    with torch.inference_mode():
+    with torch.no_grad():
         for i, cap in enumerate(captions):
             print(f"[encode] [{i+1}/{len(captions)}] gemma encode (GPU)... {time.time()-t0:.0f}s", flush=True)
             hs, mask = te.encode([cap])[0]
@@ -204,7 +212,7 @@ def main():
     cond_dir = os.path.join(args.out_dir, "conditions")
     os.makedirs(cond_dir, exist_ok=True)
     index = []
-    with torch.inference_mode():
+    with torch.no_grad():
         for cap, hs, mask in hidden:
             out = ep.process_hidden_states(hs, mask)
             ctx = out.video_encoding.to(torch.bfloat16).contiguous()

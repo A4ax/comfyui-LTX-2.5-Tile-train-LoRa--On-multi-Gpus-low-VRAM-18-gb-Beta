@@ -16,6 +16,8 @@ import time
 
 import engine_env  # noqa: E402
 engine_env.setup_paths()
+from msvc_env import apply_msvc_env  # noqa: E402
+apply_msvc_env()
 
 import torch  # noqa: E402
 
@@ -37,20 +39,25 @@ def main():
     ap.add_argument("--conditions-dir", required=True)
     ap.add_argument("--sidecar", default="", help="embeddings_processor_bf16.safetensors")
     ap.add_argument("--text-encoder", default="", help="packed Gemma text encoder")
-    ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--device", default=None, help="target device (overridden by --gpus)")
+    ap.add_argument("--gpus", default="", help="comma-separated GPU indices to place the processor on")
     ap.add_argument("--load-times", default="", help="load_times.jsonl path to append model load times")
     a = ap.parse_args()
 
-    device = torch.device(a.device)
+    gpus = [int(x) for x in a.gpus.split(",") if x.strip() != ""]
+    if gpus:
+        device = torch.device(f"cuda:{gpus[0]}")
+    else:
+        device = torch.device(a.device or "cuda:0")
     dtype = torch.bfloat16
 
     if not os.path.isdir(a.conditions_dir):
         print(f"[precompute] conditions dir not found: {a.conditions_dir}", flush=True)
         sys.exit(1)
 
-    print(f"[precompute] loading embeddings processor on {a.device}...", flush=True)
+    print(f"[precompute] loading embeddings processor on {device}...", flush=True)
     _t = time.time()
-    ep = load_embeddings_processor(a.sidecar, gemma_model_path=a.text_encoder)
+    ep = load_embeddings_processor(a.sidecar, gemma_model_path=a.text_encoder, device=device)
     ep.to(device).eval()
     _dt = time.time() - _t
     record(a.load_times, "embeddings_processor", _dt)

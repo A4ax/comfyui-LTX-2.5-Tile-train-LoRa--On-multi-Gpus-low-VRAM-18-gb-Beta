@@ -56,6 +56,10 @@ from bitsandbytes.functional import QuantState  # noqa: E402
 CACHE_DIR = os.environ.get("LTX_INT4_CACHE") or ""
 BNB_CACHE_DIR = os.environ.get("LTX_BNB_CACHE") or ""
 PLAIN_MODULES = {"patchify_proj", "audio_patchify_proj", "proj_out", "audio_proj_out"}
+# Per-rank aux placement: the large bf16 plain output projections only live on the last
+# rank (used solely in _process_output). patchify_proj/audio_patchify_proj stay on EVERY
+# rank because video/audio_args_preprocessor.prepare() runs on all ranks.
+OUTPUT_PLAIN = {"proj_out", "audio_proj_out"}
 
 
 def _linear_io(lin):
@@ -131,7 +135,10 @@ def _load_shard_from_file(model, pt_path: str, device, start, end, t0) -> None:
         sd_all = torch.load(pt_path, map_location="cpu", weights_only=False)
         print(f"[shard] loaded single file {os.path.getsize(pt_path)/1e9:.1f}GB ({len(sd_all)} tensors) ({time.time()-t0:.0f}s)", flush=True)
         aux_names = [n for n, _ in model.named_children() if n != "transformer_blocks"]
+        n_blk = len(model.transformer_blocks)
         for name in aux_names:
+            if name in OUTPUT_PLAIN and end != n_blk:
+                continue
             mod = getattr(model, name)
             prefix = f"{name}."
             sub = {k[len(prefix):]: v for k, v in sd_all.items() if k.startswith(prefix)}
@@ -174,7 +181,10 @@ def _load_shard_from_safetensors(model, pt_path, device, start, end, t0) -> None
             return f.get_tensor(key)
 
         aux_names = [n for n, _ in model.named_children() if n != "transformer_blocks"]
+        n_blk = len(model.transformer_blocks)
         for name in aux_names:
+            if name in OUTPUT_PLAIN and end != n_blk:
+                continue
             mod = getattr(model, name)
             prefix = f"{name}."
             sub = {k[len(prefix):]: get(k) for k in file_keys if k.startswith(prefix)}
@@ -417,6 +427,8 @@ def load_int4_shard(device: str | torch.device, rank: int, world: int,
         aux = sorted(x for x in os.listdir(CACHE_DIR) if x.startswith("aux_") and x.endswith(".pt"))
         for fn in aux:
             name = fn[len("aux_"):-len(".pt")]
+            if name in OUTPUT_PLAIN and rank != world - 1:
+                continue
             mod = getattr(model, name)
             if name in PLAIN_MODULES:
                 _load_plain(mod, name, device, t0)
