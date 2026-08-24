@@ -451,7 +451,7 @@ The project focuses on **systems engineering** rather than introducing a new qua
 
 ---
 
-## 🔬 Experiments & Future Work
+## 🔬 Experiments (not any more all the testing until worked 100% ) & Future Work ( all the testing are working and with amazing results 24.08.26 04:33 am )
 
 ### ✅ Multi-axis activation tiling — working experiment
 Extending the tiling system to **2×2, 3×3 … 6×6 spatial tiling** with configurable overlap reduces activation memory and allows larger training resolutions. Validated on a full **2×2** run below.
@@ -477,7 +477,12 @@ Extending the tiling system to **2×2, 3×3 … 6×6 spatial tiling** with confi
 
 **Result:** 2×2 tiling trains a face+voice LoRA comfortably within 2× 12 GB and converges the **voice/audio branch cleanly** (1.19 → 0.90). The **face/video branch** stayed in the ~2–3 range — noisier at 512×512. Both branches share a single LoRA; the audio branch clearly learns.
 
-> ⚠️ **Caveat (learned after this run):** the documented 2×2 run trained with `normalize_positions=True`, which **rebased every tile's RoPE to position 0** — that produced a train/inference position mismatch and **noisy/static video** at generation (voice stayed clean because audio isn't tiled). The ~2.4 reported "video loss" was also a **sum-of-tiles artifact** (per-tile it was healthy ~0.6). The fix — **`normalize_positions=False`** (keep absolute tile positions) — is now the default in the engine. So 2×2 and arbitrary grids (1×3, 3×2, 5×6) train with correct orientation and positions; always **verify generation quality** per grid. I did not test the results yet, if you test it please let me know the result **start with small steps ~50** 
+> ⚠️ **Caveat (learned after this run):** the documented 2×2 run trained with `normalize_positions=True`, which **rebased every tile's RoPE to position 0** — that produced a train/inference position mismatch and **noisy/static video** at generation (voice stayed clean because audio isn't tiled). The ~2.4 reported "video loss" was also a **sum-of-tiles artifact** (per-tile it was healthy ~0.6). The fix — **`normalize_positions=False`** (keep absolute tile positions) — is now the default in the engine. So 2×2 and arbitrary grids (1×3, 3×2, 5×6) train with correct orientation and positions; always **verify generation quality** per grid.
+1x2 Tile config 20 steps 15 examples results are amazing  ✅
+1x2 same
+1x3 up to 1x6 ✅
+4x4 Tile config 20 steps 15 examples done in 29 min ✅
+testing is still on going the result will be published soon 🔜 
 
 ### 🔜 Experimental block streaming (future work)
 Dynamic transformer-block streaming — a GPU keeps a working set of blocks and replaces completed ones with upcoming ones (reduce peak VRAM, keep the GPU busy). **Experimental until benchmarked.**
