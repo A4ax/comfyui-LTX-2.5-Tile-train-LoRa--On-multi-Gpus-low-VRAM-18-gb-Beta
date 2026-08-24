@@ -20,8 +20,16 @@ import os
 import sys
 import time
 
-import engine_env  # noqa: E402
-engine_env.setup_paths()
+# Portable import-path setup: resolve from env vars (set by engine_driver / the
+# calling engine script), never hardcoded. Falls back to the caller's sys.path.
+_eng = os.environ.get("LTX_ENGINE_DIR")
+_pkgs = os.environ.get("LTX_PACKAGES_DIR")
+if _eng:
+    sys.path.insert(0, _eng)
+if _pkgs:
+    sys.path.insert(0, os.path.join(_pkgs, "ltx-trainer", "src"))
+    sys.path.insert(0, os.path.join(_pkgs, "ltx-core", "src"))
+
 from msvc_env import apply_msvc_env  # noqa: E402
 
 apply_msvc_env()
@@ -43,8 +51,10 @@ QUANTIZER = {2: qint2, 4: qint4}.get(QUANT_BITS, qint4)
 import bitsandbytes as bnb  # noqa: E402
 from bitsandbytes.functional import QuantState  # noqa: E402
 
-CACHE_DIR = engine_env.CACHE_DIR
-BNB_CACHE_DIR = os.path.join(engine_env.MODELS_ROOT, "diffusion_models", "ltx-bnb-nf4-cache")
+# Portable cache-dir defaults (fallback only when no self-contained model file is
+# provided): resolved from env vars, never hardcoded.
+CACHE_DIR = os.environ.get("LTX_INT4_CACHE") or ""
+BNB_CACHE_DIR = os.environ.get("LTX_BNB_CACHE") or ""
 PLAIN_MODULES = {"patchify_proj", "audio_patchify_proj", "proj_out", "audio_proj_out"}
 
 
@@ -371,9 +381,21 @@ def load_int4_shard(device: str | torch.device, rank: int, world: int,
     needed, so users just download one file and train."""
     device = torch.device(device)
     t0 = time.time()
-    with open(os.path.join(CACHE_DIR, "config.json"), encoding="utf-8") as fh:
-        import json
-        meta = json.load(fh).get("int4_config", {})
+    # Config comes from the self-contained file's int4_config metadata when a
+    # pt_path is provided (no cache needed); otherwise from the cache dir.
+    meta = {}
+    if pt_path:
+        import safetensors
+        import json as _json
+        with safetensors.safe_open(pt_path, framework="pt") as f:
+            _mdata = f.metadata() or {}
+        _icfg = _mdata.get("int4_config")
+        if _icfg:
+            meta = _json.loads(_icfg)
+    if not meta:
+        with open(os.path.join(CACHE_DIR, "config.json"), encoding="utf-8") as fh:
+            import json
+            meta = json.load(fh).get("int4_config", {})
     model = create_meta_model(LTXModelConfigurator, meta).to(dtype=torch.bfloat16)
     print(f"[shard] rank{rank} skeleton {len(model.transformer_blocks)} blocks ({time.time()-t0:.0f}s)", flush=True)
 
