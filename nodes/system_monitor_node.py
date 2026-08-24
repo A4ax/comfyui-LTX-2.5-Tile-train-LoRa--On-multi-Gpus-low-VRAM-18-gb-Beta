@@ -11,8 +11,9 @@ class O2noorLTX25Int4SystemMonitor:
     @classmethod
     def INPUT_TYPES(cls):
         return {
-            "required": {
-                "run": ("LTX25_RUN", {"tooltip": "The run output from LTX 2.5 Int4 Train (wiring only)."}),
+            "required": {},
+            "optional": {
+                "run": ("LTX25_RUN", {"tooltip": "Optional: run output from LTX 2.5 Int4 Train (wiring only). Not required."}),
             },
         }
 
@@ -22,7 +23,7 @@ class O2noorLTX25Int4SystemMonitor:
     TITLE = "O2noor LTX 2.5 System Monitor"
     OUTPUT_NODE = True
 
-    def noop(self, run):
+    def noop(self, run=None):
         return ()
 
 
