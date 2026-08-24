@@ -176,6 +176,10 @@ Two **2-bit** modules are now available as **optional** alternatives — the **b
 
 **How they load:** `model_loader` auto-detects `qint2` / `NF4` (and `QUANT_BITS`) from the file, so these are drop-ins on the **Load Model / Encode Captions** nodes. The text-encoder GPUs are taken from the **Encode Captions `gpus`** setting (see node docs).
 
+**Download (Hugging Face):**
+- [`gemma4-12b-with-proj-ltx-2.5-qint2.safetensors`](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta/resolve/main/gemma4-12b-with-proj-ltx-2.5-qint2.safetensors) → `text_encoders/`
+- [`ltx-2.5-22b-distilled-int2-main-v2.safetensors`](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta/resolve/main/ltx-2.5-22b-distilled-int2-main-v2.safetensors) → `diffusion_models/`
+
 **Measured on this setup:**
 - **qint2 text encoder** — loads **on GPU (no CPU phase)**, caption encode ≈17 s, text-encoder VRAM ≈5.6 GB + embeddings processor ≈4.75 GB, on the GPU(s) you set in **Encode Captions**.
 - **int2 base** — the ≈5.36 GB file is the whole self-contained transformer; 2-bit storage keeps per-rank weights tiny. A 2-GPU 2-step smoke run: **peak (torch) gpu0 ≈3.8 / gpu1 ≈3.6 GB**, and **audio loss 2.09 → 1.80** over 2 steps (LoRA learning, finite gradients).
@@ -545,8 +549,8 @@ Download these **5 core files** into your model folder (the installer tells you 
 | `gemma4-12b-with-proj-ltx-2.5-bf16.safetensors` | ≈26 GB | `text_encoders/` |
 | `ltx-2.5-video-vae-bf16.safetensors` | ≈1.5 GB | `vae/` |
 | `ltx-2.5-audio-vae-bf16.safetensors` | ≈0.36 GB | `vae/` |
-| **`ltx-2.5-22b-distilled-int2-main-v2.safetensors`** 🆕 | ≈5.36 GB | `diffusion_models/` *(optional 2-bit base)* |
-| **`gemma4-12b-with-proj-ltx-2.5-qint2.safetensors`** 🆕 | ≈5.54 GB | `text_encoders/` *(optional 2-bit TE)* |
+| [**`ltx-2.5-22b-distilled-int2-main-v2.safetensors`**](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta/resolve/main/ltx-2.5-22b-distilled-int2-main-v2.safetensors) 🆕 | ≈5.36 GB | `diffusion_models/` *(optional 2-bit base)* |
+| [**`gemma4-12b-with-proj-ltx-2.5-qint2.safetensors`**](https://huggingface.co/o2noor/comfyui-LTX-2.5-Tile-train-LoRa-On-multi-Gpus-low-VRAM-18-gb-Beta/resolve/main/gemma4-12b-with-proj-ltx-2.5-qint2.safetensors) 🆕 | ≈5.54 GB | `text_encoders/` *(optional 2-bit TE)* |
 | **`gemma4-12b-with-proj-ltx-2.5-bnb-nf4.safetensors`** 🆕 | ≈10 GB | `text_encoders/` *(optional NF4 TE)* |
 
 > ⚠️ The ~26 GB text encoder works fine on 12 GB cards — it runs **8-bit (LLM.int8)** spread across **GPUs 0+1**, only during captioning/generation, then freed. Not loaded during training (training uses cached embeddings).
