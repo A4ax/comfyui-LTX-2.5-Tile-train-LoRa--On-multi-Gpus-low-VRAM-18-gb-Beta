@@ -80,7 +80,11 @@ if _ea.config:
             _early_cfg = json.load(_f)
     except Exception:
         _early_cfg = {}
-os.environ.setdefault("LTX_QUANT_BITS", str(int(_early_cfg.get("bits", 4))))
+_bits = int(_early_cfg.get("bits", 0))
+if _bits not in (2, 4):
+    _fn = str(_early_cfg.get("int4_pt") or "").lower()
+    _bits = 2 if "int2" in _fn else 4
+os.environ.setdefault("LTX_QUANT_BITS", str(_bits))
 from int4_parallel import (  # noqa: E402
     load_int4_shard, load_bnb_shard, shard_ranges, build_allocation,
     add_lora_to_block, collect_lora_state_dict,
