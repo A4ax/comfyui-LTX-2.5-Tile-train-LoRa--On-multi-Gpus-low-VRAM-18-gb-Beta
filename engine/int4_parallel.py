@@ -135,7 +135,8 @@ def _load_shard_from_file(model, pt_path: str, device, start, end, t0) -> None:
             mod = getattr(model, name)
             prefix = f"{name}."
             sub = {k[len(prefix):]: v for k, v in sd_all.items() if k.startswith(prefix)}
-            if name in PLAIN_MODULES:
+            is_quantized = any(k.startswith("weight._") for k in sub)
+            if name in PLAIN_MODULES and not is_quantized:
                 mod.to_empty(device=device)
                 mod.to(torch.bfloat16)
                 mod.load_state_dict(sub, strict=False, assign=False)
@@ -177,7 +178,8 @@ def _load_shard_from_safetensors(model, pt_path, device, start, end, t0) -> None
             mod = getattr(model, name)
             prefix = f"{name}."
             sub = {k[len(prefix):]: get(k) for k in file_keys if k.startswith(prefix)}
-            if name in PLAIN_MODULES:
+            is_quantized = any(k.startswith("weight._") for k in sub)
+            if name in PLAIN_MODULES and not is_quantized:
                 mod.to_empty(device=device)
                 mod.to(torch.bfloat16)
                 mod.load_state_dict(sub, strict=False, assign=False)
