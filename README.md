@@ -164,7 +164,7 @@ Generated with the LoRA trained by this run (`ltx25_train_20260823_145339`):
 
 ---
 
-## 🧩 New: 2-bit (int2) base + qint2 text encoder (low-VRAM modules)
+## 4🧩 New: 2-bit (int2) base + qint2 text encoder (low-VRAM modules)
 
 Two **2-bit** modules are now available as **optional** alternatives — the **bnb-NF4 base + 8-bit Gemma remain the recommended default** for quality.
 
