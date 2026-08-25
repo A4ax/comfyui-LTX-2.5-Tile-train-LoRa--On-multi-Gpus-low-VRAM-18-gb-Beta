@@ -173,6 +173,20 @@ class O2noorLTX25Int4VoiceDataset:
         # Text-encoder GPUs flow from the O2noorLTX25Int4EncodeCaptions node when wired;
         # otherwise auto-detect all available GPUs (never hardcode to GPU0/GPU1).
         te_gpus = (captions or {}).get("gpus") or _auto_gpus()
+        # Per-GPU Gemma layer split flows from the EncodeCaptions node too; if absent,
+        # auto-derive a balanced split for the chosen GPUs (fill first n-1 evenly).
+        te_layers = (captions or {}).get("layers_per_gpu") or ""
+        if not te_layers:
+            _nsel = len([x for x in str(te_gpus).split(",") if x.strip() != ""]) or 1
+            if _nsel <= 1:
+                _sdef = [48]
+            elif _nsel == 2:
+                _sdef = [24, 24]
+            else:
+                _used = _nsel - 1
+                _base, _rem = 48 // _used, 48 % _used
+                _sdef = [_base + (1 if i < _rem else 0) for i in range(_used)] + [0]
+            te_layers = ",".join(str(x) for x in _sdef)
         _dc = model.get("device_config") or {}
         # Device placement comes from the LoadModel node (video_vae/audio_vae); fall back to auto.
         dev = _dev_choice(_dc.get("video_vae"), engine_driver.pick_device("auto"))
@@ -338,6 +352,7 @@ class O2noorLTX25Int4VoiceDataset:
                 "--captions", trigger_word,
                 "--out-dir", cap_src,
                 "--gpus", te_gpus,
+                "--layers-per-gpu", te_layers,
                 "--connectors-device", _dc.get("connectors") or "gpu0",
                 "--load-times", lt_path])
             log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")

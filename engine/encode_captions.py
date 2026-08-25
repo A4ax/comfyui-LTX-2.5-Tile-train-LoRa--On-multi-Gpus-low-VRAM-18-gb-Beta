@@ -47,6 +47,11 @@ from ltx_core.text_encoders.gemma import GemmaTextEncoderConfigurator, get_gemma
 from ltx_core.text_encoders.gemma.gemma_assets import resolve_gemma_weight_paths  # noqa: E402
 
 LOAD_GPUS = [0, 1]          # two 3060s for the 8-bit model (~6.5GB each)
+# Optional per-GPU layer split. When set (e.g. [24,24] or [16,16,16]), layer `li`
+# is placed on the GPU whose range contains it. When empty, layers round-robin over
+# LOAD_GPUS. This lets a user choose exactly how many of the 48 Gemma transformer
+# layers go to whichever GPUs; it must sum to <= n_layers and its length == LOAD_GPUS.
+LAYERS_PER_GPU = []
 LAYER_RE = re.compile(r"\.layers\.(\d+)\.")
 
 
@@ -99,10 +104,32 @@ def load_gemma_8bit_gpu(te_path):
     print(f"[encode] non-layer weights staged on CPU ({time.time()-t0:.0f}s)", flush=True)
 
     # 2) per-layer: bf16 CPU -> swap 8-bit -> .to(cuda) quantizes to int8 on GPU.
-    #    Put ~40% of layers on cuda:0 and ~60% on cuda:1 so cuda:0 keeps headroom
-    #    for dispatch_model's internal re-quantize (bnb .to() allocates transiently).
+    #    The layer->GPU placement honors LAYERS_PER_GPU if provided (each GPU owns a
+    #    contiguous range of transformer layers, e.g. [24,24] = GPU0:0-23, GPU1:24-47;
+    #    [16,16,16] = GPU0:0-15, GPU1:16-31, GPU2:32-47). Otherwise layers round-robin
+    #    over LOAD_GPUS so ANY number of GPUs is used (no hardcoded 2-GPU limit).
+    def _layer_boundaries():
+        """Build (gpu, start_layer, end_layer) triples from LAYERS_PER_GPU."""
+        if not LAYERS_PER_GPU:
+            return None
+        triples, acc = [], 0
+        for gi, cnt in enumerate(LAYERS_PER_GPU):
+            cnt = max(0, int(cnt))
+            if cnt > 0:
+                triples.append((gi, acc, acc + cnt))
+            acc += cnt
+        return triples
+
+    _bounds = _layer_boundaries()
+
     def layer_gpu(li):
-        return LOAD_GPUS[0] if (li % 5) < 2 else LOAD_GPUS[1]
+        if _bounds is not None:
+            for gi, lo, hi in _bounds:
+                if lo <= li < hi:
+                    return LOAD_GPUS[gi % len(LOAD_GPUS)]
+            return LOAD_GPUS[-1]
+        # Round-robin (no per-GPU split): use every selected GPU in turn.
+        return LOAD_GPUS[li % len(LOAD_GPUS)]
 
     with safetensors.safe_open(te_path, framework="pt") as f:
         for li in range(n_layers):
@@ -150,7 +177,12 @@ def load_gemma_8bit_gpu(te_path):
 
     for m in [lm.embed_tokens, *lm.layers, lm.norm]:
         m.register_forward_pre_hook(_route_hook, with_kwargs=True)
-    print(f"[encode] 8-bit Gemma on {LOAD_GPUS} with custom routing vram={vram()} ({time.time()-t0:.0f}s)", flush=True)
+    if _bounds is not None:
+        print(f"[encode] 8-bit Gemma layer map on {LOAD_GPUS} -> "
+              f"{ {f'gpu{LOAD_GPUS[gi % len(LOAD_GPUS)]}':(lo,hi) for gi,lo,hi in _bounds} } "
+              f"vram={vram()} ({time.time()-t0:.0f}s)", flush=True)
+    else:
+        print(f"[encode] 8-bit Gemma on {LOAD_GPUS} (round-robin) with custom routing vram={vram()} ({time.time()-t0:.0f}s)", flush=True)
     return te
 
 
@@ -162,12 +194,17 @@ def main():
     ap.add_argument("--captions", required=True, help="; separated captions")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--gpus", default="0,1", help="comma-separated GPU indices for the text encoder")
+    ap.add_argument("--layers-per-gpu", default="",
+                    help="comma-separated layer counts per selected GPU, e.g. '24,24' or '16,16,16'. "
+                         "Must sum to <= n_layers and match len(--gpus). Empty = round-robin across --gpus.")
     ap.add_argument("--connectors-device", default=None, help="gpu0|gpu1|gpu2|cpu for the embeddings processor")
     ap.add_argument("--load-times", default="", help="load_times.jsonl path to append model load times")
     args = ap.parse_args()
 
-    global LOAD_GPUS
+    global LOAD_GPUS, LAYERS_PER_GPU
     LOAD_GPUS = [int(x) for x in args.gpus.split(",") if x.strip() != ""] or [0, 1]
+    if args.layers_per_gpu and args.layers_per_gpu.strip():
+        LAYERS_PER_GPU = [int(x) for x in args.layers_per_gpu.split(",") if x.strip() != ""]
 
     captions = [c.strip() for c in args.captions.split(";") if c.strip()]
     os.makedirs(args.out_dir, exist_ok=True)
