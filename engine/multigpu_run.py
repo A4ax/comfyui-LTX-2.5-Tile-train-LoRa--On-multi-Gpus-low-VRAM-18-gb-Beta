@@ -56,9 +56,33 @@ def main() -> None:
         procs.append(subprocess.Popen(cmd, env=env))
 
     rc = 0
-    for p in procs:
-        if p.wait() != 0:
-            rc = 1
+    # Wait for every rank. If ANY rank exits non-zero (e.g. CUDA OOM), kill the rest
+    # immediately so the launcher (and ComfyUI) never hangs on a stuck collective.
+    alive = set(range(len(procs)))
+    while alive:
+        for i in list(alive):
+            c = procs[i].poll()
+            if c is not None:
+                alive.discard(i)
+                if c != 0 and rc == 0:
+                    rc = c
+                    for j in alive:
+                        try:
+                            procs[j].terminate()
+                        except Exception:
+                            pass
+        if rc != 0:
+            import time as _time
+            _deadline = _time.time() + 5
+            while alive and _time.time() < _deadline:
+                for j in list(alive):
+                    if procs[j].poll() is not None:
+                        alive.discard(j)
+                _time.sleep(0.1)
+            break
+        import time as _t
+        _t.sleep(0.05)
+    print(f"[launcher] exit rc={rc} (world={args.world})", flush=True)
     sys.exit(rc)
 
 

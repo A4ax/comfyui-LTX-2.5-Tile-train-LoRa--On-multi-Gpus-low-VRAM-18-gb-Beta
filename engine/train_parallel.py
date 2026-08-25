@@ -327,6 +327,17 @@ def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS
 
 
 def run_shard(model, base, x, perturbations, start, end, ckpt=True, a=None):
+    """Run the owning rank's block shard [start,end).
+
+    `ckpt` selects GRADIENT CHECKPOINTING per block:
+      - True  -> checkpoint EVERY block (current default, lowest VRAM, slowest).
+      - False -> checkpoint NO block     (max speed, highest VRAM).
+      - a set (e.g. {0, 4, 7}) -> checkpoint only those block indices (relative to
+        start), i.e. SELECTIVE checkpointing: the fat/high-activation blocks are
+        recomputed from a small checkpoint while the thin blocks keep full
+        activations. This is decided once at load time by checkpoint_level='auto'.
+    Checkpointing is local to a rank's own shard, so each rank may pick a DIFFERENT
+    subset without affecting the model-parallel activation handoff."""
     v = replace(base, x=x)
     for bi in range(start, end):
         v = model.block_input_processor(
@@ -342,13 +353,14 @@ def run_shard(model, base, x, perturbations, start, end, ckpt=True, a=None):
                 self_attn_type=PerturbationType.SKIP_AUDIO_SELF_ATTN,
                 cross_attn_type=PerturbationType.SKIP_V2A_CROSS_ATTN,
             )
+        use = ckpt if isinstance(ckpt, bool) else (bi - start) in ckpt
         if a is None:
-            if ckpt:
+            if use:
                 v, _ = torch.utils.checkpoint.checkpoint(model.transformer_blocks[bi], v, None, use_reentrant=False)
             else:
                 v, _ = model.transformer_blocks[bi](v, None)
         else:
-            if ckpt:
+            if use:
                 v, a = torch.utils.checkpoint.checkpoint(model.transformer_blocks[bi], v, a, use_reentrant=False)
             else:
                 v, a = model.transformer_blocks[bi](v, a)
@@ -468,6 +480,47 @@ def main():
     else:
         ranges = shard_ranges(n_blocks, world)
     START, END = ranges[rank]
+
+    # ---- checkpoint_level resolution (gradient-checkpointing behavior) ----------
+    # 'checkpoint_level' = "on" | "off" | "auto". `auto` picks SELECTIVE per-block
+    # checkpointing (decided once here, no runtime watchdog) so that this rank's
+    # ckpt-OFF activations + model + LoRA + optimizer fit its card with headroom.
+    # It is resolution-aware: the per-block stored-activation cost scales with SEQ.
+    # A rank with a big card (12 GB) keeps most/all blocks OFF -> full OFF speed; a
+    # rank with a small card (8.6 GB 4060) checkpoints its fattest blocks so it never
+    # OOMs, while the thin blocks still get OFF speed.
+    ckpt_level = str(cfg.get("checkpoint_level", "") or "").strip().lower()
+    if ckpt_level == "auto":
+        _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
+        # Measured on this rig: ckpt-ON floor (weights+LoRA+opt+ctx) ~ 4.85 GB for a
+        # 16-block shard on the 4060, ~6.5 GB on a 3060. Scale roughly by shard size.
+        _floor = 4.85 + (END - START) * 0.07                      # GB, ckpt-ON residency
+        _headroom = 1.2                                           # GB safety margin
+        # Per-block ckpt-OFF activation cost; calibrated from measured +~0.163 GB/block
+        # at SEQ 512 (24 blocks), scaled linearly with SEQ. Audio adds a small constant.
+        _per_blk = 0.163 * (SEQ / 512.0)
+        _lo = (RANK_R / 16.0) * 0.05                              # LoRA-scale memory nudge
+        # How much VRAM we have over the floor for stored activations:
+        _room = (_card_mem - _floor - _headroom - _lo)
+        _n_blocks = END - START
+        # Number of blocks we may leave OFF (un-checkpointed): those that fit in `_room`.
+        _off_budget = max(0, int(_room / _per_blk)) if _per_blk > 0 else _n_blocks
+        _off_budget = min(_n_blocks, _off_budget)
+        # Keep the THIN blocks OFF. Block activation size grows with attention sequence
+        # (bigger in later blocks), so checkpoint the LAST (fattest) blocks first and
+        # leave the earliest (thinnest) blocks OFF. OFF-set = the first `_off_budget`.
+        _ckpt_fat = set(range(_off_budget, _n_blocks))            # relative indices -> checkpoint
+        use_ckpt = _ckpt_fat                                       # non-bool => per-block set
+        print(f"[TR] rank{rank} checkpoint_level=auto: card={_card_mem:.1f}GB floor={_floor:.1f}GB "
+              f"seq={SEQ} nblocks={_n_blocks} off_budget={_off_budget} "
+              f"checkpointed_blocks={sorted(_ckpt_fat)} ({len(_ckpt_fat)}/{_n_blocks})", flush=True)
+    else:
+        use_ckpt = bool(cfg.get("gradient_checkpointing", True))
+        if ckpt_level == "off":
+            use_ckpt = False
+        elif ckpt_level == "on":
+            use_ckpt = True
+        print(f"[TR] rank{rank} checkpoint_level={ckpt_level or ('on' if use_ckpt else 'off')}", flush=True)
 
     print(f"[TR] rank{rank} {torch.cuda.get_device_name(device)} blocks[{START}:{END}] tile={tcfg.grid} ov={tcfg.overlap} backend={backend}", flush=True)
     t0 = time.time()

@@ -43,9 +43,14 @@ class O2noorLTX25Int4Train:
                                                 "tooltip": "Save a LoRA checkpoint every N steps (0 = off)."}),
                 "blocking": ("BOOLEAN", {"default": True,
                                   "tooltip": "Run in the foreground (blocks) so ComfyUI waits for completion."}),
-                "gradient_checkpointing": ("BOOLEAN", {"default": False,
-                    "tooltip": "Recompute the forward during backward to save VRAM (slower). "
-                               "OFF = faster if you have VRAM headroom."}),
+                "checkpoint_level": (["off", "auto", "on"], {"default": "auto",
+                    "tooltip": "Gradient-checkpointing behavior.\n"
+                               "  auto = selective per-block (recommended): keeps maximum OFF speed while "
+                               "automatically checkpointing only the blocks that won't fit a small GPU (e.g. "
+                               "the 4060), so every GPU that can hold full-OFF does, and the rest never OOM.\n"
+                               "  off  = no checkpointing (fastest, most VRAM). Use only when all GPUs are "
+                               "large enough (e.g. all 12 GB) — otherwise a small GPU may OOM.\n"
+                               "  on   = checkpoint every block (most VRAM-safe, slowest)."}),
                 "use_wsl": ("BOOLEAN", {"default": False,
                     "tooltip": "Run the engine inside WSL2 (Linux) to use the faster NCCL multi-GPU backend.\n"
                                "  OFF = current native-Windows engine (gloo).\n"
@@ -67,7 +72,7 @@ class O2noorLTX25Int4Train:
     TITLE = "O2noor LTX 2.5 Int4 Train"
 
     def run(self, model, dataset, run_name, auto_unique, steps, lr, rank, alpha,
-            checkpoint_interval, blocking, gradient_checkpointing, use_wsl=False,
+            checkpoint_interval, blocking, checkpoint_level, use_wsl=False,
             tile_config=None):
         workdir = engine_driver.engine_workdir()
         py = engine_driver.engine_python()
@@ -137,7 +142,9 @@ class O2noorLTX25Int4Train:
             "bnb_pt": int4_model_file if backend == "bnb_nf4" else None,
             "dataset_root": dataset.get("dataset_root", ""),
             "device_config": model.get("device_config") or {},
-            "gradient_checkpointing": bool(gradient_checkpointing),
+            "checkpoint_level": str(checkpoint_level or "auto"),
+            # Backward-compat placeholder (engine now reads checkpoint_level above).
+            "gradient_checkpointing": bool(str(checkpoint_level or "auto") == "on"),
             # Optional low-VRAM feed-forward chunking (from O2noorLTX25ChunkFeedForward,
             # stamped on the model input).
             "ffn_chunks": int(model.get("ffn_chunks", 1) or 1),
