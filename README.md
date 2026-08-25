@@ -349,7 +349,9 @@ Low-VRAM FFN chunking for training (returns an `LTX25_MODEL` stamped with `ffn_c
 Live dashboard: circular ring, **loss / video loss / audio loss**, **s/step**, **step/s**, **ETA**, **VRAM gpu0/gpu1/total** (bars), **grads**, collapsible **History** chart. Connect its `run` input to the Train node.
 
 ### 🖥️ `O2noor LTX 2.5 System Monitor`
-Live machine dashboard: **every GPU** (memory used/total, utilization, temperature), **system RAM**, and **CPU** — polled every second. Connect its `run` input to the Train node (wiring only). Shows the real numbers `nvidia-smi` reports (includes CUDA context + embeddings processor), unlike the telemetry's PyTorch-only peak. this node takes run input cosmetic this node doesn’t need to be connect.
+Live machine dashboard: **every GPU** (memory used/total, utilization, temperature), **system RAM**, and **CPU** — polled every second. Connect its `run` input to the Train node (wiring only). Shows the real numbers `nvidia-smi` reports (includes CUDA context + embeddings processor), unlike the telemetry's PyTorch-only peak. This node takes a cosmetic `run` input; it doesn’t need to be connected.
+
+> 🆕 **Top-bar monitor (Crystools-style):** the same live monitor is also available as an always-on **panel in ComfyUI's top bar** (next to rgthree) — no node needed. It shows every GPU (VRAM used/total, util%, temp), RAM, and CPU, updating every 2 s. Enable/disable it from **Settings → O2noor → "O2noor System Monitor (top bar)"** (ON by default).
 
 ### 🔵 `O2noor LTX 2.5 Progress (Live)` / 📄 `O2noor LTX 2.5 Logs/Outputs` / ℹ️ `O2noor LTX 2.5 Summary (Info)`
 Live ring + loss chart, aligned per-step log (`(vX/aY)` = video/audio loss), and a rich summary (✅ status, run time, final/video/audio loss, VRAM peak, checkpoints, per-model load times).

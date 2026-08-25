@@ -304,7 +304,8 @@ async def _system(request: web.Request) -> web.Response:
     try:
         import psutil
         vm = psutil.virtual_memory()
-        ram = {"used_gb": round(vm.used / 1e9, 2), "total_gb": round(vm.total / 1e9, 2),
+        # Report in GiB (1024^3) so a 32 GiB machine shows 32 GB, not 34 (1e9 would inflate it).
+        ram = {"used_gb": round(vm.used / (1024 ** 3), 2), "total_gb": round(vm.total / (1024 ** 3), 2),
                "percent": round(vm.percent, 1)}
         cpu = {"percent": round(psutil.cpu_percent(interval=0.1), 1),
                "cores_logical": psutil.cpu_count(logical=True) or 0,
