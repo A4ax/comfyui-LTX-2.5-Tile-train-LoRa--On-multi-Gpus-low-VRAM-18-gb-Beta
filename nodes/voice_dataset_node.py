@@ -88,7 +88,7 @@ class O2noorLTX25Int4VoiceDataset:
                 "videos": ("STRING", {
                     "default": "",
                     "tooltip": "Upload VIDEOS of the person speaking here. Each video is auto-split "
-                               "into segment_duration clips (face+voice).",
+                               "into `frames`-long clips (face+voice).",
                 }),
                 "images": ("STRING", {
                     "default": "",
@@ -100,12 +100,14 @@ class O2noorLTX25Int4VoiceDataset:
                     "tooltip": "face+voice trains a LoRA that learns both the face and the voice. "
                                "face-only is the original face-only behavior.",
                 }),
-                "segment_duration": ("FLOAT", {
-                    "default": 0.7, "min": 0.2, "max": 10.0, "step": 0.1,
-                    "tooltip": "Seconds per training clip. Each uploaded video is auto-split into "
-                               "clips of this length (frames auto-derived to a valid 8k+1 bucket). "
-                               "e.g. 0.7 = ~17 frames, 1.0 = ~25 frames at 24fps.",
-                }),
+                "frames": (["5", "9", "17", "24", "25", "33", "41", "49"], {
+                    "default": "24",
+                    "tooltip": "Clip length in FRAMES. The actual clip seconds = frames / clip_fps.\n"
+                               "  e.g. @24fps: 5=0.21s  9=0.375s  17=0.708s  24=1.000s  25=1.042s "
+                               "33=1.375s  41=1.708s  49=2.042s\n"
+                               "  @30fps: 5=0.17s  9=0.30s  17=0.567s  24=0.800s  25=0.833s  33=1.100s\n"
+                               "Pick the frame count closest to your target length; the clip is cut to "
+                               "this many frames regardless of source length."}),
                 "max_segments": ("INT", {
                     "default": 0, "min": 0, "max": 500, "step": 1,
                     "tooltip": "Max clips to cut from EACH uploaded video. 0 = unlimited (cut them all).",
@@ -148,7 +150,7 @@ class O2noorLTX25Int4VoiceDataset:
     CATEGORY = "ltx25-int4-train"
     TITLE = "O2noor LTX 2.5 Int4 Voice Dataset"
 
-    def preprocess(self, model, videos, images, mode="face+voice", segment_duration=0.7,
+    def preprocess(self, model, videos, images, mode="face+voice", frames=24,
                    max_segments=0, width=512, height=512, clip_fps=24, trigger_word="ltxchar",
                    output_dir=None, vae_tiling=True, vae_tile_size=512, vae_tile_overlap=128,
                    overwrite=False, captions=None):
@@ -160,11 +162,10 @@ class O2noorLTX25Int4VoiceDataset:
         # Audio VAE comes from the LoadModel node (single source of truth), else config.
         avae = model.get("audio_vae") or cfg.get("audio_vae", "")
 
-        # Derive the video frames bucket from the requested segment duration (snap to 8k+1).
+        # The clip length is set directly in FRAMES (user's choice); the actual clip
+        # seconds = frames / clip_fps. The video VAE crop/pads to `frames` exactly.
         fps = max(1, int(clip_fps))
-        target = max(1, int(round(float(segment_duration) * fps)))
-        k = max(1, int(round((target - 1) / 8.0)))
-        frames = 8 * k + 1
+        frames = max(1, int(frames))
         segdur = frames / fps
 
         cap_src = captions.get("output_dir") if captions else None
@@ -190,8 +191,8 @@ class O2noorLTX25Int4VoiceDataset:
         _dc = model.get("device_config") or {}
         # Device placement comes from the LoadModel node (video_vae/audio_vae); fall back to auto.
         dev = _dev_choice(_dc.get("video_vae"), engine_driver.pick_device("auto"))
-        print(f"[O2noorLTX25Int4VoiceDataset] device={dev} mode={mode} seg={segment_duration}s->{frames}f "
-              f"({segdur:.3f}s) audio={use_audio}", flush=True)
+        print(f"[O2noorLTX25Int4VoiceDataset] device={dev} mode={mode} frames={frames}f "
+              f"({segdur:.3f}s @ {fps}fps) audio={use_audio}", flush=True)
 
         def parse_list(raw):
             raw = (raw or "").strip()
