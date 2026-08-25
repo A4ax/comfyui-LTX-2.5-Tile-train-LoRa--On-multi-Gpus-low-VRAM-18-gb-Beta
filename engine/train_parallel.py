@@ -492,19 +492,26 @@ def main():
     ckpt_level = str(cfg.get("checkpoint_level", "") or "").strip().lower()
     if ckpt_level == "auto":
         _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
-        # Measured on this rig: ckpt-ON floor (weights+LoRA+opt+ctx) ~ 4.85 GB for a
-        # 16-block shard on the 4060, ~6.5 GB on a 3060. Scale roughly by shard size.
-        _floor = 4.85 + (END - START) * 0.07                      # GB, ckpt-ON residency
-        _headroom = 1.2                                           # GB safety margin
-        # Per-block ckpt-OFF activation cost; calibrated from measured +~0.163 GB/block
-        # at SEQ 512 (24 blocks), scaled linearly with SEQ. Audio adds a small constant.
-        _per_blk = 0.163 * (SEQ / 512.0)
-        _lo = (RANK_R / 16.0) * 0.05                              # LoRA-scale memory nudge
+        # CONSERVATIVE budget so `auto` NEVER lets a rank get close to OOM.
+        # The old constants were calibrated on a light case (face-only, rank 16,
+        # 512x512x9); with the user's real config (rank 32, face+voice, 512x512x17/25)
+        # they under-estimated the activation cost and rank1 OOM'd at step 0.
+        # ckpt-ON floor (weights + LoRA + 8-bit Adam + ctx), scaled by shard size and
+        # by LoRA rank (rank 32 LoRA is ~2x the params of rank 16).
+        _floor = 4.85 + (END - START) * 0.07 + (RANK_R / 16.0) * 0.15
+        _headroom = 2.0                                           # GB safety margin
+        # Per-block ckpt-OFF activation cost. GROWS with sequence length more than
+        # linearly (attention + FFN activations per token), so scale by (SEQ/512)^1.4.
+        # If face+voice, the audio branch threads activations through every block too.
+        _per_blk = 0.163 * ((SEQ / 512.0) ** 1.4)
+        if TRAIN_AUDIO:
+            _per_blk *= 1.5
         # How much VRAM we have over the floor for stored activations:
-        _room = (_card_mem - _floor - _headroom - _lo)
+        _room = (_card_mem - _floor - _headroom)
         _n_blocks = END - START
-        # Number of blocks we may leave OFF (un-checkpointed): those that fit in `_room`.
-        _off_budget = max(0, int(_room / _per_blk)) if _per_blk > 0 else _n_blocks
+        # Number of blocks we may leave OFF (un-checkpointed): those that fit in `_room`
+        # with the conservative `_per_blk`. Round DOWN (never exceed the budget).
+        _off_budget = max(0, int(_room / _per_blk)) if _per_blk > 0 else 0
         _off_budget = min(_n_blocks, _off_budget)
         # Keep the THIN blocks OFF. Block activation size grows with attention sequence
         # (bigger in later blocks), so checkpoint the LAST (fattest) blocks first and
@@ -512,7 +519,7 @@ def main():
         _ckpt_fat = set(range(_off_budget, _n_blocks))            # relative indices -> checkpoint
         use_ckpt = _ckpt_fat                                       # non-bool => per-block set
         print(f"[TR] rank{rank} checkpoint_level=auto: card={_card_mem:.1f}GB floor={_floor:.1f}GB "
-              f"seq={SEQ} nblocks={_n_blocks} off_budget={_off_budget} "
+              f"seq={SEQ} audio={int(TRAIN_AUDIO)} nblocks={_n_blocks} off_budget={_off_budget} "
               f"checkpointed_blocks={sorted(_ckpt_fat)} ({len(_ckpt_fat)}/{_n_blocks})", flush=True)
     else:
         use_ckpt = bool(cfg.get("gradient_checkpointing", True))
