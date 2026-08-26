@@ -27,6 +27,12 @@ const EXT = {
       r = onNodeCreated?.apply(this, arguments);
       that = this;
 
+      // Duplicate-guard: onNodeCreated re-fires on workflow reload/app restart.
+      // Without bailout we'd push another widget + <style> + setInterval + wrap
+      // onExecuted every time, leaving a blank orphaned widget. (logs_live /
+      // metrics / system_monitor all guard the same way.)
+      if ((this.widgets || []).some((w) => w.name === "ltx25-dataset-timeline")) return r;
+
       const pollWidget = (this.widgets || []).find((w) => w.name === "poll_seconds");
 
       const root = document.createElement("div");
