@@ -54,8 +54,12 @@ class O2noorLTX25Int4Train:
                                "that fit, checkpoints only the blocks that won't fit a small GPU (e.g. the "
                                "4060). Faster than on, but still can fragment a big GPU — only if you "
                                "need the speed.\n"
-                               "  off  = no checkpointing (fastest, most VRAM). Use only when all GPUs are "
-                               "large enough (e.g. all 12 GB) — otherwise a small GPU may OOM."}),
+                                "  off  = no checkpointing (fastest, most VRAM). Use only when all GPUs are "
+                                "large enough (e.g. all 12 GB) — otherwise a small GPU may OOM."}),
+                "vram_ceiling_gb": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 64.0, "step": 0.5,
+                    "tooltip": "Optional hard per-GPU VRAM ceiling (GB) for checkpoint 'auto'. "
+                               "0 = off (use the actual free VRAM). Set e.g. 8 to keep every GPU under "
+                               "8 GB so the peak never exceeds the card."}),
                 "use_wsl": ("BOOLEAN", {"default": False,
                     "tooltip": "Run the engine inside WSL2 (Linux) to use the faster NCCL multi-GPU backend.\n"
                                "  OFF = current native-Windows engine (gloo).\n"
@@ -78,7 +82,7 @@ class O2noorLTX25Int4Train:
 
     def run(self, model, dataset, run_name, auto_unique, steps, lr, rank, alpha,
             checkpoint_interval, blocking, checkpoint_level, use_wsl=False,
-            tile_config=None):
+            tile_config=None, vram_ceiling_gb=0.0):
         workdir = engine_driver.engine_workdir()
         py = engine_driver.engine_python()
 
@@ -148,6 +152,7 @@ class O2noorLTX25Int4Train:
             "dataset_root": dataset.get("dataset_root", ""),
             "device_config": model.get("device_config") or {},
             "checkpoint_level": str(checkpoint_level or "on"),
+            "vram_ceiling_gb": float(vram_ceiling_gb or 0.0),
             # Backward-compat placeholder (engine now reads checkpoint_level above).
             "gradient_checkpointing": bool(str(checkpoint_level or "on") == "on"),
             # Optional low-VRAM feed-forward chunking (from O2noorLTX25ChunkFeedForward,

@@ -344,7 +344,7 @@ def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS
 
     Returns (mod_v, target_v, mod_a, target_a). mod_a is None if no audio latent /
     audio embeds exist for this sample (audio branch skipped that step)."""
-    idx = ORDER[seed % NUM_SAMPLES] if (ORDER and NUM_SAMPLES > 0) else ((seed % NUM_SAMPLES) if NUM_SAMPLES > 0 else seed)
+    idx = ORDER[seed % NUM_SAMPLES] if (ORDER and len(ORDER) == NUM_SAMPLES and NUM_SAMPLES > 0) else ((seed % NUM_SAMPLES) if NUM_SAMPLES > 0 else seed)
     x0, ctx = _load_real_sample(idx, device_, dtype, seq)
     audio_lat = _load_audio_latent(idx, device_, dtype)
     _, audio_emb = _apply_embeddings(idx, device_, dtype)
@@ -567,6 +567,11 @@ def main():
             _card_mem = float(_free_gb) / 1e9
         except Exception:
             _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
+        # Optional hard per-GPU VRAM ceiling: budget `auto` within min(true_free, ceiling)
+        # so it never leaves blocks OFF that would push usage above the allowance.
+        _ceiling = float(cfg.get("vram_ceiling_gb") or 0)
+        if _ceiling > 0:
+            _card_mem = min(_card_mem, _ceiling)
         # CONSERVATIVE budget so `auto` NEVER lets a rank get close to OOM.
         # The old constants were calibrated on a light case (face-only, rank 16,
         # 512x512x9); with the user's real config (rank 32, face+voice, 512x512x17/25)
@@ -828,7 +833,6 @@ def main():
         # steps costs nothing measurable and keeps live memory tight.
         if step % LOG_EVERY == 0:
             torch.cuda.empty_cache()
-        peak = torch.cuda.max_memory_allocated(device) / 1e9
         dt = time.time() - t1
         now = time.time()
         sps = 1.0 / max(dt, 1e-6)
