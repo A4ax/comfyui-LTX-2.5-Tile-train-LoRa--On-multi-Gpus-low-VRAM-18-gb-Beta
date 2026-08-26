@@ -130,6 +130,7 @@ NUM_SAMPLES = 0
 AUDIO_CH = 8
 AUDIO_FB = 16
 TRAIN_AUDIO = False
+AUDIO_IDX = set()  # indices in dataset.json that have an `audio` key (voice samples)
 
 # RAM cache of the whole dataset (video latents, condition embeds, audio latents),
 # loaded ONCE at training start to eliminate per-step disk I/O.
@@ -335,7 +336,11 @@ def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS
                      positions=coords.contiguous(), context=ctx, context_mask=None)
 
     mod_a, target_a = None, None
-    if audio_lat is not None and audio_emb is not None:
+    # Only treat a sample as a voice (audio) step if dataset.json marks it as having
+    # audio AND the audio latent/embeds exist. This prevents stale audio latents for
+    # image-only samples from silently converting them into voice steps (which is why
+    # image steps no longer showed up in the log).
+    if idx in AUDIO_IDX and audio_lat is not None and audio_emb is not None:
         ap = AudioPatchifier(1)
         T = audio_lat.shape[1]
         patched = ap.patchify(audio_lat.unsqueeze(0))          # (1,T,128)
@@ -467,7 +472,7 @@ def main():
     backend = cfg.get("backend", "quanto")  # "quanto" | "bnb_nf4"
     fixed_data = bool(cfg.get("fixed_data", False))  # same latent/target every step
 
-    global DATASET_ROOT, NUM_SAMPLES, TRAIN_AUDIO
+    global DATASET_ROOT, NUM_SAMPLES, TRAIN_AUDIO, AUDIO_IDX
     TRAIN_AUDIO = bool(cfg.get("train_audio", False))
 
     DATASET_ROOT = (cfg.get("dataset_root") or os.environ.get("LTX_DATASET_ROOT")
@@ -475,11 +480,15 @@ def main():
     # Use the dataset.json sample count (the true dataset), not a count of .pt files,
     # so stale latents left over from earlier runs are never sampled.
     NUM_SAMPLES = 0
+    AUDIO_IDX = set()
     djson = os.path.join(DATASET_ROOT, "dataset.json")
     if os.path.exists(djson):
         try:
             with open(djson, encoding="utf-8") as _f:
-                NUM_SAMPLES = len(json.load(_f))
+                _ds = json.load(_f)
+                NUM_SAMPLES = len(_ds)
+                AUDIO_IDX = {i for i, s in enumerate(_ds)
+                             if isinstance(s, dict) and (s.get("audio") or s.get("has_audio"))}
         except Exception:
             NUM_SAMPLES = 0
     if NUM_SAMPLES <= 0:

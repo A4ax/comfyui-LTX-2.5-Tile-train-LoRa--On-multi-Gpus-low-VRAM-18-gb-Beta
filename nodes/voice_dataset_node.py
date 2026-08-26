@@ -226,15 +226,15 @@ class O2noorLTX25Int4VoiceDataset:
         log_parts = []
 
         # Clear stale artifacts from earlier runs (different buckets) so the trainer
-        # never samples leftover latents of a mismatched resolution.
+        # never samples leftover latents of a mismatched resolution. Remove the NESTED
+        # scenes subdirs too (audio_latents/scenes, latents/scenes, conditions/scenes) —
+        # otherwise stale audio latents for image-only samples persist into the next run
+        # and silently turn image steps into voice steps (so no images show in the log).
+        import shutil
         for stale in ("scenes", "latents", "audio_latents", "conditions"):
             _sd = os.path.join(output_dir, stale)
-            if os.path.isdir(_sd):
-                for _f in os.listdir(_sd):
-                    try:
-                        os.remove(os.path.join(_sd, _f))
-                    except Exception:
-                        pass
+            shutil.rmtree(_sd, ignore_errors=True)
+            os.makedirs(_sd, exist_ok=True)
         log_parts.append("[clean] cleared stale scenes/latents/audio_latents/conditions")
 
         # Shared per-model load-time log (truncated each run); each engine script appends to it.
