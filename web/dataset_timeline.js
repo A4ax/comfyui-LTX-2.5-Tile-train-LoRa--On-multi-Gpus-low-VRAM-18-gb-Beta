@@ -21,9 +21,11 @@ const EXT = {
 
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
-      const r = onNodeCreated?.apply(this, arguments);
-      const that = this;
-      let timer = null;
+      let r, that, timer = null, liveStatusPath = null, capturedPath = null,
+          onDatasetStatus, onExecuted;
+      try {
+      r = onNodeCreated?.apply(this, arguments);
+      that = this;
 
       const pollWidget = (this.widgets || []).find((w) => w.name === "poll_seconds");
 
@@ -111,7 +113,7 @@ const EXT = {
             : 'Wire the <b style="color:#e6edf3">dataset</b> output here.<br>' +
               '<span style="font-size:10px;color:#6e7681">Connect O2noor LTX 2.5 Voice Dataset → dataset, then run it. No path is guessed.</span>';
           canvas.appendChild(msg);
-          ctx.setDirtyCanvas(true, true);
+          that.graph?.setDirtyCanvas?.(true, true);
           return;
         }
 
@@ -199,7 +201,7 @@ const EXT = {
           canvas.appendChild(c);
         }
 
-        ctx.setDirtyCanvas(true, true);
+        that.graph?.setDirtyCanvas?.(true, true);
       };
 
       function card(label) {
@@ -229,27 +231,29 @@ const EXT = {
       // Live status path delivered by the Voice Dataset node at encode start via
       // ltx25:dataset_status (mirrors how Train pushes ltx25:telemetry). When set,
       // it takes priority over wiring so the widget polls the live encode.
-      let liveStatusPath = null;
-      const onDatasetStatus = (event) => {
+      onDatasetStatus = (event) => {
         const d = event && event.detail;
         if (d && d.status_path) liveStatusPath = d.status_path;
       };
       api.addEventListener("ltx25:dataset_status", onDatasetStatus);
 
       // ---- Resolve the monitored dataset root ----
-      // Priority: 1) live path broadcast by Voice Dataset at encode start,
-      // 2) the connected dataset node's output dict (dataset_root, via getInputData),
-      // 3) the graph-linked source node's output_dir widget. No hardcoded paths.
+      // Priority: 1) live path broadcast at encode start (ltx25:dataset_status),
+      // 2) path captured in onExecuted (dataset_root from the wired dataset dict),
+      // 3) getInputData(0).dataset_root,
+      // 4) graph-linked source output_dir widget. On ComfyUI 0.33.4 links live in
+      // graph._links (a Map), NOT graph.links, so index via _links.get(link).
       function resolvePath() {
         if (liveStatusPath && liveStatusPath.trim()) return liveStatusPath.trim();
+        if (capturedPath && capturedPath.trim()) return capturedPath.trim();
         try {
           const d = that.getInputData ? that.getInputData(0) : null;
           if (d && d.dataset_root) return d.dataset_root;
         } catch (e) { /* ignore */ }
         try {
           const input = (that.inputs || []).find((i) => i.name === "dataset");
-          if (input && input.link != null) {
-            const link = that.graph && that.graph.links[input.link];
+          if (input && input.link != null && that.graph) {
+            const link = (that.graph._links && that.graph._links.get(input.link)) || that.graph.links?.[input.link];
             if (link) {
               const src = that.graph.getNodeById(link.origin_id);
               if (src && src.widgets && src.widgets.length) {
@@ -264,12 +268,29 @@ const EXT = {
 
       const isWired = () => {
         if (liveStatusPath && liveStatusPath.trim()) return true;
+        if (capturedPath && capturedPath.trim()) return true;
         try {
           const d = that.getInputData ? that.getInputData(0) : null;
           if (d && d.dataset_root) return true;
           const input = (that.inputs || []).find((i) => i.name === "dataset");
           return !!(input && input.link != null);
         } catch (e) { return false; }
+      };
+
+      // Capture the dataset_root from the wired dataset output when this node runs.
+      const onExecutedPrev = nodeType.prototype.onExecuted;
+      nodeType.prototype.onExecuted = function (message) {
+        const next = onExecutedPrev?.apply(this, arguments);
+        try {
+          const inputs = (message && message.input) || {};
+          if (inputs && inputs.dataset && inputs.dataset.dataset_root) {
+            capturedPath = inputs.dataset.dataset_root;
+          } else {
+            const d = this.getInputData ? this.getInputData(0) : null;
+            if (d && d.dataset_root) capturedPath = d.dataset_root;
+          }
+        } catch (e) { /* ignore */ }
+        return next;
       };
 
       // ---- Poll loop ----
@@ -294,6 +315,10 @@ const EXT = {
         onRemoved?.apply(this, arguments);
       };
       return r;
+      } catch (e) {
+        console.error("[ltx25-dataset-timeline] setup error:", e);
+        return r;
+      }
     };
   },
 };
