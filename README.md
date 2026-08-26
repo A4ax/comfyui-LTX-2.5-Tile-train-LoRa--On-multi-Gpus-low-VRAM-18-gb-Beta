@@ -8,6 +8,20 @@ This project **experimentally enables LoRA fine-tuning of the LTX-2.5 22B *disti
 
 ---
 
+## What's new (2026-08-26 release)
+
+Key improvements for reliability (long-run OOM fixes) and usability:
+
+- **`checkpoint_level` = `off / auto / on`** on the Train node (replaces the old ON/OFF checkbox). `auto` does **selective per-block gradient checkpointing**: it keeps full-OFF speed on cards that fit, and automatically checkpoint-corrects the blocks that won't fit a small GPU (e.g. the 4060), so you never OOM. `on` recomputes every block (smallest footprint, safest). `off` is fastest but needs lots of VRAM headroom.
+- **`cudaMallocAsync` CUDA allocator (the OOM fix).** The engine now defaults to CUDA's stream-ordered pool allocator, which pools memory and avoids the classic caching-allocator **fragmentation**. This is the real fix for the sporadic `CUDA out of memory` that killed long runs (steps ~55/76/87) even when live VRAM was far below the card limit. (`expandable_segments` is compiled out of the Windows torch 2.13 wheel, so it cannot be used here; `cudaMallocAsync` is the available equivalent. Override with `LTX_ALLOC` if needed.)
+- **Long-run OOM fixed.** Root cause was the native allocator fragmenting under the checkpoint-recompute churn (a 256 MiB bnb dequantize transient failed while only ~7 GiB was live). Fixed via the allocator change + releasing the autograd graph (`retain_graph=False` on the last gradient pass) + periodic `torch.cuda.empty_cache()`.
+- **`cudaMallocAsync` + `checkpoint_level = on`** is the recommended stable config on 12 GB cards: ~3+ GB free headroom on the 3060s with no OOM.
+- **Voice Dataset: `frames` preset** (replaces `segment_duration`). Pick the clip length in frames (5/9/17/24/25/33/41/49); `clip_fps` stays a free number. Clip length = `frames / clip_fps`, shown in the tooltip (e.g. 24 @ 24 fps = 1.000s).
+- **Encode Captions: per-GPU layer sliders.** Auto-detects your GPU count and shows one `layers_gpu{N}` slider per card; the 48 Gemma layers are spread across however many GPUs you use (was hardcoded to 2). `gpus` selects which cards.
+- **Metrics Dashboard shows every GPU** (was hardcoded to gpu0/gpu1), and training subprocesses now write per-rank logs to `multigpu_logs/` so a crash is always visible.
+
+---
+
 ## ❓ Why this matters
 
 ```
@@ -331,7 +345,10 @@ Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted)
 - **run_name** — your LoRA's base name.
 - **auto_unique** 🆕 — ON by default: if the output folder exists, it appends a timestamp so **retraining never overwrites the old LoRA**.
 - **steps / lr / rank / alpha / checkpoint_interval** — hyper-params.
-- **gradient_checkpointing** — ON for low VRAM must always stay ON ( OFF Will give OOM on only cuda0 in multi GPUs setup **bug** I need more testing).
+- **`checkpoint_level`** — `off / auto / on`.
+  - **`on` (recommended / safest):** recomputes every block's forward during backward, so the **live VRAM footprint is the smallest**. **Keep it ON.** The bnb-NF4 backward allocates transient dequantize tensors (up to ~256 MB-1 GB); with `off` or `auto` leaving blocks recompute-on-demand, the classic allocator *fragments* and a transient OOMs **even when live usage is far below the card limit** (we measured this at steps 55/76/87: "Currently allocated ~7 GiB, Requested 256 MiB, Free 0 bytes").
+  - **`off`** — fastest, but only safe if every GPU has a lot of headroom. On 12 GB cards with face+voice at 512x512x17 / rank 32 it OOMs.
+  - **`auto`** — keeps OFF speed on cards that fit and checkpoints only the blocks that don't; a good middle, but `on` is the reliability guarantee.
 - **Optimizer** 🆕 — the LoRA is trained with **8-bit AdamW** (bitsandbytes) → smaller optimizer-state VRAM and a slightly lower peak.
 - **Per-rank aux placement** 🆕 — the large bf16 output projections (`proj_out` / `audio_proj_out`) now live **only on the last rank** (not duplicated on every GPU), balancing VRAM and lowering cuda0's peak. `patchify_proj` stays on every rank (all ranks use the input preprocessor).
 - **tile_config** — optional input from the Tile Config node (below).
@@ -459,7 +476,7 @@ If you want **faster GPU→GPU communication**, the engine can run inside **WSL2
 - Use a **longer speaking video** (30 s–1 min) so the voice has enough to learn.
 - **Vary the background** — otherwise the LoRA memorizes one background instead of your face/voice.
 - Keep **`auto_unique = ON`**.
-- Use **`gradient_checkpointing = ON`** on 12 GB cards.
+- Use **`checkpoint_level = on`** (or `auto`) on 12 GB cards. **Keep it ON** — it is what prevents the native-allocator fragmentation OOM (see "What's new" above).
 - Make sure your face is **visible AND speaking** (lip-synced) for a voice+face LoRA.
 - **100 examples** keep your data set examples under 200, recommended **100**
 ### ❌ Don't
@@ -587,6 +604,7 @@ This repository contains **two distinct things**:
 
 - **`torchaudio` can't decode audio** → install FFmpeg **shared** DLLs (`winget install BtbN.FFmpeg.GPL.Shared`). `install.py` sets this up.
 - **OOM during voice+face** → the audio connector is **precomputed** (default) so the embeddings processor isn't on the GPUs during training.
+- **`CUDA out of memory` with `checkpoint_level` = `off`/`auto` (sporadic, at any step)** — this is allocator **fragmentation**, not real capacity: a small bnb `dequantize_4bit` transient fails even though live VRAM is far below the limit (log shows "Currently allocated ~7 GiB, Requested 256 MiB, Free 0 bytes"). **Fix: set `checkpoint_level = on`** (recompute every block → smallest footprint); the engine also uses the `cudaMallocAsync` pool allocator by default. Keep `on` for reliability. (expandable_segments is compiled out of Windows torch 2.13, so `cudaMallocAsync` is the working equivalent.)
 - **Stale-latent shape error** → the dataset node clears `latents/audio_latents/conditions` before each run; delete the dataset folder if it persists.
 - **Wrong `frames` bucket** → keep `segment_duration` so it snaps to a valid `8k+1` count.
 - **`cl.exe` / JIT build errors** → install VS 2022 Build Tools (C++ workload) or set `LTX_VCVARS`.
