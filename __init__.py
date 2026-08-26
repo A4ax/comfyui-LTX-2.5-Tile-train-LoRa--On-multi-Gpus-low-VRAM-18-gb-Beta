@@ -28,6 +28,7 @@ from .nodes.batch_prompt_node import O2noorLTX25BatchPrompt
 from .nodes.progress_summary_node import O2noorLTX25Int4Progress, O2noorLTX25Int4SummaryViewer
 from .nodes.metrics_node import O2noorLTX25Int4Metrics
 from .nodes.system_monitor_node import O2noorLTX25Int4SystemMonitor
+from .nodes.dataset_timeline_node import O2noorLTX25Int4DatasetTimeline
 from .nodes.chunk_ffn_node import O2noorLTX25ChunkFeedForward
 
 WEB_DIRECTORY = "./web"
@@ -48,6 +49,7 @@ NODE_CLASS_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": O2noorLTX25Int4SummaryViewer,
     "O2noorLTX25Int4Metrics": O2noorLTX25Int4Metrics,
     "O2noorLTX25Int4SystemMonitor": O2noorLTX25Int4SystemMonitor,
+    "O2noorLTX25Int4DatasetTimeline": O2noorLTX25Int4DatasetTimeline,
     "O2noorLTX25ChunkFeedForward": O2noorLTX25ChunkFeedForward,
 }
 
@@ -67,6 +69,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": "O2noor LTX 2.5 Summary (Info)",
     "O2noorLTX25Int4Metrics": "O2noor LTX 2.5 Metrics Dashboard",
     "O2noorLTX25Int4SystemMonitor": "O2noor LTX 2.5 System Monitor",
+    "O2noorLTX25Int4DatasetTimeline": "O2noor LTX 2.5 Dataset Timeline",
     "O2noorLTX25ChunkFeedForward": "modify version from kjNodes ltx 2.5 Chunk FeedForward",
 }
 
@@ -338,6 +341,97 @@ async def _load_times(request: web.Request) -> web.Response:
     return web.json_response({"ok": True, "items": items})
 
 
+async def _dataset_timeline(request: web.Request) -> web.Response:
+    """Live dataset-pipeline timeline data for the Dataset Timeline node.
+
+    Reads, from a dataset root:
+      - status.jsonl   (append-only stage/progress events)  -> latest + tail,
+      - load_times.jsonl (per-model load seconds),
+      - scenes/        (ffmpeg clip count + write cadence -> ~s/clip),
+      - dataset.json   (sample count / audio flag),
+      - the newest event timestamp (to detect a stale/stuck run).
+    Everything is read-only and never errors out.
+    """
+    path = request.query.get("path", "")
+    if not path:
+        return web.json_response({"ok": False, "error": "no path"})
+
+    events = []
+    def _read_jsonl(name):
+        out = []
+        f = os.path.join(path, name)
+        if os.path.exists(f):
+            try:
+                with open(f, encoding="utf-8", errors="replace") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line:
+                            try:
+                                out.append(json.loads(line))
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+        return out
+
+    events = _read_jsonl("status.jsonl")
+    loads = _read_jsonl("load_times.jsonl")
+
+    # Scene clipping (ffmpeg) progress + cadence, derived from file mtimes.
+    scenes_info = {"count": 0, "newest_t": 0, "oldest_recent_t": 0, "sample_rate": 0.0}
+    scenes_dir = os.path.join(path, "scenes")
+    if os.path.isdir(scenes_dir):
+        try:
+            times = []
+            for entry in os.listdir(scenes_dir):
+                p = os.path.join(scenes_dir, entry)
+                if os.path.isfile(p) and entry.lower().endswith(".mp4"):
+                    times.append(os.path.getmtime(p))
+            times.sort()
+            scenes_info["count"] = len(times)
+            if times:
+                scenes_info["newest_t"] = times[-1]
+                # Rough clips/s: use the write window of the last up-to-10 files.
+                if len(times) >= 2:
+                    recent = times[-10:]
+                    span = recent[-1] - recent[0]
+                    scenes_info["sample_rate"] = round((len(recent) - 1) / span, 2) if span > 0 else 0.0
+        except Exception:
+            pass
+
+    # Dataset.json metadata (sample count, audio flag).
+    ds_info = {"samples": 0, "audio": False, "width": 0, "height": 0, "frames": 0}
+    ds_f = os.path.join(path, "dataset.json")
+    if os.path.exists(ds_f):
+        try:
+            with open(ds_f, encoding="utf-8", errors="replace") as fh:
+                samples = json.load(fh)
+            ds_info["samples"] = len(samples)
+            ds_info["audio"] = any(s.get("audio") for s in samples if isinstance(s, dict))
+        except Exception:
+            pass
+
+    # Additional style info from the last status event if present.
+    meta = {}
+    if events:
+        last = events[-1]
+        for k in ("mode", "width", "height", "frames", "fps", "seg"):
+            if isinstance(last, dict) and last.get(k) is not None:
+                meta[k] = last[k]
+
+    latest_t = events[-1].get("t", 0.0) if events and isinstance(events[-1], dict) else (
+        scenes_info["newest_t"])
+    return web.json_response({
+        "ok": True,
+        "events": events[-80:],
+        "loads": loads,
+        "scenes": scenes_info,
+        "dataset": ds_info,
+        "meta": meta,
+        "latest_t": latest_t,
+    })
+
+
 routes = server.PromptServer.instance.routes
 routes.post("/ltx25/upload/images")(_upload_images)
 routes.get("/ltx25/telemetry")(_telemetry)
@@ -346,5 +440,6 @@ routes.get("/ltx25/runinfo")(_runinfo)
 routes.post("/ltx25/clear_run")(_clear_run)
 routes.get("/ltx25/thumb")(_thumb)
 routes.get("/ltx25/load_times")(_load_times)
+routes.get("/ltx25/dataset_timeline")(_dataset_timeline)
 routes.get("/ltx25/latest_run")(_latest_run)
 routes.get("/ltx25/system")(_system)

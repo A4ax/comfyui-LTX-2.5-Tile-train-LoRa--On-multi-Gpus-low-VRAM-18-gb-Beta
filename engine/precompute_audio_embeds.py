@@ -22,6 +22,7 @@ apply_msvc_env()
 import torch  # noqa: E402
 
 from load_times import record  # noqa: E402
+from dataset_status import status as _st  # noqa: E402
 
 from ltx_trainer.model_loader import load_embeddings_processor  # noqa: E402
 
@@ -62,6 +63,8 @@ def main():
     _dt = time.time() - _t
     record(a.load_times, "embeddings_processor", _dt)
     print(f"[precompute] embeddings processor loaded in {_dt:.1f}s", flush=True)
+    _st(a.load_times, stage="precompute_audio_embeds", sub="processor_loaded",
+        note=f"{_dt:.1f}s", t0=round(_dt, 1))
 
     files = []
     for root, _, names in os.walk(a.conditions_dir):
@@ -101,6 +104,7 @@ def main():
         except Exception as e:
             print(f"[precompute] error {path}: {e}", flush=True)
     print(f"[precompute] DONE cached={done} skipped={skipped}", flush=True)
+    _st(a.load_times, stage="precompute_audio_embeds_done", done=done, skipped=skipped, rc=0)
 
 
 if __name__ == "__main__":
