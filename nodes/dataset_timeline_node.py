@@ -1,73 +1,57 @@
 """O2noorLTX25Int4DatasetTimeline — live dataset-pipeline timeline node.
 
-Wire this to the `dataset` output of the Voice Dataset node (or any dataset
-root). It renders a live, animated dashboard of everything the dataset encode is
-doing inside so the node never looks frozen:
+Wire this to the `dataset` output of the Voice Dataset node. It renders a live,
+animated dashboard of everything the dataset encode is doing inside so the node
+never looks frozen:
 
-  - current stage + a moving spinner (cutting clips / audio extract / caption
-    encode / precompute audio / VAE video+audio encode, or done),
-  - ffmpeg clip-cutting: clips done / total, ~s/clip, elapsed+s (derived live
-    from the scenes file writes),
+  - current stage + a spinner that only moves while a stage is actually running,
+  - ffmpeg clip-cutting: clips done / total, ~clips/s, elapsed,
+  - audio extract / caption / precompute / VAE video+audio encode bars,
   - per-model load times (from load_times.jsonl) with seconds + total,
-  - live status event log tail (from status.jsonl),
-  - GPU / RAM utilisation.
+  - live status event log tail (from status.jsonl).
 
-The web widget (dataset_timeline.js) polls /ltx25/dataset_timeline every second.
-OUTPUT display node (no model output).
+NO HARDCoded PATHS: the node only monitors a dataset when it is WIRED to a
+dataset (LTX25_DATASET) output. The dataset_root is resolved purely from the
+wired dataset dict (dataset["dataset_root"]), never from config or a default.
+Without a wire it shows an explicit "wire the dataset output" empty state — no
+spinner, no misleading empty panel.
+
+The web widget (dataset_timeline.js) polls /ltx25/dataset_timeline every second
+using the dataset_root exposed by this node. OUTPUT display node (no model output).
 """
 
 
 class O2noorLTX25Int4DatasetTimeline:
     @classmethod
     def INPUT_TYPES(cls):
-        from . import engine_driver
-        try:
-            from .. import pack_config
-            default_path = pack_config.load_config().get("dataset_root") or engine_driver.engine_workdir()
-        except Exception:
-            default_path = engine_driver.engine_workdir()
         return {
             "required": {},
             "optional": {
                 "dataset": ("LTX25_DATASET", {
-                    "tooltip": "The dataset output from O2noor LTX 2.5 Voice Dataset. "
-                               "Wiring only — used to find the dataset root to monitor.",
-                }),
-                "dataset_path": ("STRING", {
-                    "default": default_path if default_path else "",
-                    "tooltip": "The dataset root to monitor (defaults to the pack dataset_root). "
-                               "Set this to the dataset output's path if you want a different one.",
+                    "tooltip": "REQUIRED for monitoring: the dataset output from "
+                               "O2noor LTX 2.5 Voice Dataset. The dataset root is "
+                               "read from this connection — no path is guessed.",
                 }),
                 "poll_seconds": ("INT", {"default": 1, "min": 0.5, "max": 10.0, "step": 0.5,
                                          "tooltip": "How often the dashboard refreshes (seconds)."}),
             },
         }
 
-    RETURN_TYPES = ()
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("dataset_root",)
     FUNCTION = "noop"
     CATEGORY = "ltx25-int4-train"
     TITLE = "O2noor LTX 2.5 Dataset Timeline"
     OUTPUT_NODE = True
 
-    def noop(self, dataset=None, dataset_path="", poll_seconds=1.0):
-        # Auto-follow the connected dataset node: if the dataset output carries a
-        # dataset_root and the user hasn't overridden dataset_path, push the real
-        # path back into the widget so the JS polls the correct directory.
-        try:
-            root = ""
-            if isinstance(dataset, dict):
-                root = dataset.get("dataset_root") or root
-            want_override = (dataset_path and dataset_path != "") and (
-                not (self.widgets and any(w.name == "dataset_path" for w in self.widgets)) or
-                (self.widgets and any(w.name == "dataset_path" and (w.value == "" or w.value is None) for w in self.widgets))
-            )
-            if root and (not dataset_path or want_override):
-                for w in (self.widgets or []):
-                    if w.name == "dataset_path":
-                        w.value = root
-        except Exception:
-            pass
-        return ()
+    def noop(self, dataset=None, poll_seconds=1.0):
+        # Resolve the monitored root ONLY from the wired dataset dict. If there is
+        # no wire (or the dict carries no dataset_root), return "" so the widget
+        # shows an explicit "wire the dataset output" empty state.
+        root = ""
+        if isinstance(dataset, dict):
+            root = dataset.get("dataset_root") or ""
+        return (root,)
 
 
 NODE_CLASS_MAPPINGS = {

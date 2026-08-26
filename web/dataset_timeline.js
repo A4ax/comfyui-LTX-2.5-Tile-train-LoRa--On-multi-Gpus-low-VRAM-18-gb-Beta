@@ -25,9 +25,7 @@ const EXT = {
       const that = this;
       let timer = null;
 
-      const pathWidget = (this.widgets || []).find((w) => w.name === "dataset_path");
       const pollWidget = (this.widgets || []).find((w) => w.name === "poll_seconds");
-      if (pathWidget) pathWidget.type = "text";
 
       const root = document.createElement("div");
       root.style.cssText =
@@ -58,12 +56,15 @@ const EXT = {
       }
 
       const spinner = () => {
+        // Style the spinner as a static ring (no animation). Animation is driven
+        // only by render() while a stage is actually running, so it never spins
+        // idly before/without a wired dataset.
         const s = root.querySelector(".dtl-spinner");
         if (s) {
           s.style.border = "2px solid rgba(34,211,238,.2)";
           s.style.borderTopColor = "#22d3ee";
           s.style.borderRadius = "50%";
-          s.style.animation = "dtlspin .8s linear infinite";
+          s.style.animation = "none";
         }
       };
       const css = document.createElement("style");
@@ -88,11 +89,31 @@ const EXT = {
         return (h ? h + ":" + pad(m) : m) + ":" + pad(ss);
       };
 
-      const render = (data) => {
+      const render = (data, path) => {
         // clock
         const c = root.querySelector(".dtl-clock");
         if (c) c.textContent = new Date().toLocaleTimeString();
-        if (!data || !data.ok) { return; }
+
+        // ---- Empty state: no wired dataset / no data -> explicit message, NO spinner ----
+        const wired = isWired();
+        const pathEmpty = !path || !path.trim();
+        if (!wired || pathEmpty || !data || !data.ok) {
+          const spinEl = root.querySelector(".dtl-spinner");
+          if (spinEl) spinEl.style.animation = "none";   // stop the endless circle
+          canvas.innerHTML = "";
+          const msg = document.createElement("div");
+          msg.style.cssText =
+            "background:#161b22;border:1px dashed #30363d;border-radius:7px;" +
+            "padding:14px;text-align:center;color:#8b949e;font-size:12px;line-height:1.6;";
+          msg.innerHTML = wired
+            ? 'Waiting for the dataset output to produce data…<br>' +
+              '<span style="font-size:10px;color:#6e7681">Run the Voice Dataset node upstream to populate the timeline.</span>'
+            : 'Wire the <b style="color:#e6edf3">dataset</b> output here.<br>' +
+              '<span style="font-size:10px;color:#6e7681">Connect O2noor LTX 2.5 Voice Dataset → dataset, then run it. No path is guessed.</span>';
+          canvas.appendChild(msg);
+          ctx.setDirtyCanvas(true, true);
+          return;
+        }
 
         // ---- Stage card ----
         const stage = data.events && data.events.length ? data.events[data.events.length - 1].stage : "idle";
@@ -109,6 +130,9 @@ const EXT = {
           done: "Complete",
         };
         const live = (["cut", "audio_extract", "encode_captions", "precompute_audio_embeds", "vae_encode"].indexOf(stage) >= 0);
+        // Drive the spinner only while a stage is actually running.
+        const spinEl = root.querySelector(".dtl-spinner");
+        if (spinEl) spinEl.style.animation = live ? "dtlspin .8s linear infinite" : "none";
 
         canvas.innerHTML = "";
         const stageCard = card("Current stage");
@@ -202,21 +226,24 @@ const EXT = {
         return b;
       }
 
-      // ---- Auto-follow the connected dataset node for its root ----
+      // ---- Resolve the monitored dataset root purely from the WIRED dataset ----
+      // No hardcoded/default path: the root is read from the connected dataset
+      // node's output (getInputData(0)) via the graph link, matching logs_live.
       function resolvePath() {
-        // If the user typed a path, respect it.
-        if (pathWidget && pathWidget.value && pathWidget.value.trim()) return pathWidget.value.trim();
-        // Otherwise walk to the connected Voice Dataset node and read its dataset_root
-        // from the serialized widget value.
+        try {
+          // Prefer the directly-inbound dataset dict (dataset_root inside it).
+          const d = that.getInputData ? that.getInputData(0) : null;
+          if (d && d.dataset_root) return d.dataset_root;
+        } catch (e) { /* ignore */ }
+        // Fallback: walk the graph link to the source node's own dataset_root output.
         try {
           const input = (that.inputs || []).find((i) => i.name === "dataset");
           if (input && input.link != null) {
             const link = that.graph && that.graph.links[input.link];
             if (link) {
               const src = that.graph.getNodeById(link.origin_id);
-              if (src && (src.widgets || []).length) {
-                const w = src.widgets.find((x) => x.name === "dataset_path" ||
-                  x.name === "output_dir" || x.name === "dataset_root");
+              if (src && src.widgets && src.widgets.length) {
+                const w = src.widgets.find((x) => x.name === "output_dir" || x.name === "dataset_root");
                 if (w && w.value) return w.value;
               }
             }
@@ -225,18 +252,26 @@ const EXT = {
         return "";
       }
 
+      const isWired = () => {
+        try {
+          const d = that.getInputData ? that.getInputData(0) : null;
+          if (d && d.dataset_root) return true;
+          const input = (that.inputs || []).find((i) => i.name === "dataset");
+          return !!(input && input.link != null);
+        } catch (e) { return false; }
+      };
+
       // ---- Poll loop ----
       async function tick() {
-        let path = pathWidget ? (pathWidget.value || "") : "";
-        if (!path || !path.trim()) path = resolvePath();
+        const path = resolvePath();
         try {
           const url = "/ltx25/dataset_timeline?path=" + encodeURIComponent(path);
           const resp = await api.fetchApi(url);
-          render(await resp.json());
+          render(await resp.json(), path);
         } catch (e) { /* ignore */ }
       }
 
-      spinner();
+      spinner();  // static ring styling only (idle = not rotating)
       tick();
       const poll = () => Math.max(0.5, Number(pollWidget ? pollWidget.value : 1) || 1) * 1000;
       timer = setInterval(tick, poll());
