@@ -256,7 +256,7 @@ function addProgressWidget(nodeType) {
         });
         ctx.stroke();
         // orange: audio loss, with CUT gaps where there's no audio (null).
-        ctx.strokeStyle = "#f0a35e"; ctx.lineWidth = 1.5; ctx.beginPath();
+        ctx.strokeStyle = "#f0a35e"; ctx.lineWidth = 2; ctx.beginPath();
         let pen = false;
         aData.forEach((v, i) => {
           if (v == null) { pen = false; return; }
@@ -266,11 +266,21 @@ function addProgressWidget(nodeType) {
           else ctx.lineTo(x, y);
         });
         ctx.stroke();
+        // Markers: voice steps are isolated (interleaved ~1 in 3), so the connecting
+        // line alone collapses to invisible dots. Draw a filled marker at every audio
+        // step so the orange (audio) series is always visible.
+        ctx.fillStyle = "#f0a35e";
+        aData.forEach((v, i) => {
+          if (v == null) return;
+          const x = (i / (aData.length - 1)) * w;
+          const y = yFor(v);
+          ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill();
+        });
         // Label drawn on top in its own filled band so the line never covers it.
         ctx.fillStyle = "#0b0f14";
         ctx.fillRect(0, h - LABEL_H, w, LABEL_H);
         ctx.fillStyle = "#8b949e"; ctx.font = "11px Inter, system-ui";
-        ctx.fillText(`loss  min ${min.toFixed(3)}  max ${max.toFixed(3)}  (last ${data.length})   blue=video  orange=audio`, 6, h - 5);
+        ctx.fillText(`loss  min ${min.toFixed(3)}  max ${max.toFixed(3)}  (last ${data.length})   blue=video  ●orange=audio`, 6, h - 5);
       };
 
       const resize = () => {

@@ -555,54 +555,55 @@ def main():
     # OOMs, while the thin blocks still get OFF speed.
     ckpt_level = str(cfg.get("checkpoint_level", "") or "").strip().lower()
     if ckpt_level == "auto":
-        # Budget from ACTUAL FREE VRAM right now, not the nominal card size. The engine
-        # runs alongside ComfyUI on the SAME GPUs (train_node sets CUDA_VISIBLE_DEVICES
-        # to all cards), so the real ceiling is what mem_get_info reports free at load —
-        # not the marketed 12.9 GB. Nominal sizing under-reserved on this shared rig and
-        # lets `auto` leave too many blocks OFF, so the native (non-expandable-segments)
-        # CUDA allocator fragments and the bnb backward's 256 MiB dequantize OOMs even
-        # though live usage is far below the card limit.
+        # Budget from EACH CARD'S OWN nominal memory, not free-at-load. The engine
+        # runs alongside ComfyUI on the same GPUs, so subtract a small shared-rig
+        # reserve (ComfyUI's own CUDA context) and cap by vram_ceiling_gb when set.
+        # A 12 GB 3060 therefore keeps more blocks OFF (full forward speed) while an
+        # 8 GB 4060 stays checkpointed (never OOMs): "each GPU under its own allowance".
         try:
-            _free_gb, _tot_gb = torch.cuda.mem_get_info(device)
-            _card_mem = float(_free_gb) / 1e9
+            _nominal_gb = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
         except Exception:
-            _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
-        # Optional hard per-GPU VRAM ceiling: budget `auto` within min(true_free, ceiling)
-        # so it never leaves blocks OFF that would push usage above the allowance.
-        _ceiling = float(cfg.get("vram_ceiling_gb") or 0)
+            _nominal_gb = 12.0
+        _shared = 1.5 if _nominal_gb >= 10.0 else 1.0   # ComfyUI context on every card
+        _card_mem = _nominal_gb - _shared
+        # Optional hard VRAM ceiling: single value (applies to all ranks) or a per-rank
+        # list (e.g. "8,8,6"). 0 = no ceiling.
+        _ceiling_raw = cfg.get("vram_ceiling_gb") or 0
+        if isinstance(_ceiling_raw, (list, tuple)) and len(_ceiling_raw) > rank:
+            try: _ceiling = float(_ceiling_raw[rank]) or 0.0
+            except Exception: _ceiling = 0.0
+        else:
+            try: _ceiling = float(_ceiling_raw) or 0.0
+            except Exception: _ceiling = 0.0
         if _ceiling > 0:
             _card_mem = min(_card_mem, _ceiling)
-        # CONSERVATIVE budget so `auto` NEVER lets a rank get close to OOM.
-        # The old constants were calibrated on a light case (face-only, rank 16,
-        # 512x512x9); with the user's real config (rank 32, face+voice, 512x512x17/25)
-        # they under-estimated the activation cost and rank1 OOM'd at step 0.
         # ckpt-ON floor (weights + LoRA + 8-bit Adam + ctx), scaled by shard size and
-        # by LoRA rank (rank 32 LoRA is ~2x the params of rank 16).
+        # LoRA rank (rank 32 LoRA is ~2x the params of rank 16).
         _floor = 4.85 + (END - START) * 0.07 + (RANK_R / 16.0) * 0.15
-        _headroom = 4.0                                           # GB safety margin (leave lots of room for
-                                                                  # bnb backward dequantize transients + allocator
-                                                                  # fragmentation on the heaviest shard; too small
-                                                                  # a margin made the 21-block rank OOM at step ~3).
+        # Headroom scaled by card size (big cards can afford more slack; small cards
+        # keep a tight-but-safe margin). Covers bnb dequantize transients + allocator
+        # fragmentation on the heaviest shard.
+        _headroom = 1.0 + 0.10 * _nominal_gb
         # Per-block ckpt-OFF activation cost. GROWS with sequence length more than
         # linearly (attention + FFN activations per token), so scale by (SEQ/512)^1.4.
         # If face+voice, the audio branch threads activations through every block too.
         _per_blk = 0.163 * ((SEQ / 512.0) ** 1.4)
         if TRAIN_AUDIO:
             _per_blk *= 1.5
-        # How much VRAM we have over the floor for stored activations:
+        # How much VRAM we have over the floor+headroom for stored activations:
         _room = (_card_mem - _floor - _headroom)
         _n_blocks = END - START
         # Number of blocks we may leave OFF (un-checkpointed): those that fit in `_room`
         # with the conservative `_per_blk`. Round DOWN (never exceed the budget).
         _off_budget = max(0, int(_room / _per_blk)) if _per_blk > 0 else 0
         _off_budget = min(_n_blocks, _off_budget)
-        # Keep the THIN blocks OFF. Block activation size grows with attention sequence
-        # (bigger in later blocks), so checkpoint the LAST (fattest) blocks first and
-        # leave the earliest (thinnest) blocks OFF. OFF-set = the first `_off_budget`.
+        # Keep the THIN blocks OFF (activation size grows with attention sequence, so
+        # the LAST blocks are the fattest): OFF-set = the first `_off_budget`.
         _ckpt_fat = set(range(_off_budget, _n_blocks))            # relative indices -> checkpoint
         use_ckpt = _ckpt_fat                                       # non-bool => per-block set
-        print(f"[TR] rank{rank} checkpoint_level=auto: free={_card_mem:.1f}GB floor={_floor:.1f}GB "
-              f"seq={SEQ} audio={int(TRAIN_AUDIO)} nblocks={_n_blocks} off_budget={_off_budget} "
+        print(f"[TR] rank{rank} checkpoint_level=auto: card={_nominal_gb:.1f}GB shared={_shared:.1f} "
+              f"budget={_card_mem:.1f}GB floor={_floor:.1f}GB headroom={_headroom:.1f}GB seq={SEQ} "
+              f"audio={int(TRAIN_AUDIO)} nblocks={_n_blocks} off_budget={_off_budget} "
               f"checkpointed_blocks={sorted(_ckpt_fat)} ({len(_ckpt_fat)}/{_n_blocks})", flush=True)
     else:
         use_ckpt = bool(cfg.get("gradient_checkpointing", True))

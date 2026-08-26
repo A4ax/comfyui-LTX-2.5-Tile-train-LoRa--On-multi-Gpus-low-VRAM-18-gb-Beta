@@ -216,7 +216,7 @@ const EXT = {
           hctx.strokeStyle = "#22d3ee"; hctx.lineWidth = 2; hctx.beginPath();
           data.forEach((v, i) => { const x = (i / (data.length - 1)) * w; const y = yFor(v); i === 0 ? hctx.moveTo(x, y) : hctx.lineTo(x, y); });
           hctx.stroke();
-          hctx.strokeStyle = "#f0a35e"; hctx.lineWidth = 1.5; hctx.beginPath();
+          hctx.strokeStyle = "#f0a35e"; hctx.lineWidth = 2; hctx.beginPath();
           let pen = false;
           aData.forEach((v, i) => {
             if (v == null) { pen = false; return; }
@@ -224,9 +224,18 @@ const EXT = {
             if (!pen) { hctx.moveTo(x, y); pen = true; } else hctx.lineTo(x, y);
           });
           hctx.stroke();
+          // Markers: voice steps are isolated (interleaved ~1 in 3), so the connecting
+          // line alone collapses to invisible dots. Draw a filled marker at every audio
+          // step so the orange (audio) series is always visible.
+          hctx.fillStyle = "#f0a35e";
+          aData.forEach((v, i) => {
+            if (v == null) return;
+            const x = (i / (aData.length - 1)) * w; const y = yFor(v);
+            hctx.beginPath(); hctx.arc(x, y, 3, 0, Math.PI * 2); hctx.fill();
+          });
           hctx.fillStyle = "#0b0f14"; hctx.fillRect(0, h - 16, w, 16);
           hctx.fillStyle = "#8b949e"; hctx.font = "11px Inter";
-          hctx.fillText(`loss min ${min.toFixed(3)} max ${max.toFixed(3)} (last ${data.length})  blue=video orange=audio`, 6, h - 4);
+          hctx.fillText(`loss min ${min.toFixed(3)} max ${max.toFixed(3)} (last ${data.length})  blue=video ●orange=audio`, 6, h - 4);
         };
 
         histBtn.addEventListener("click", () => {
