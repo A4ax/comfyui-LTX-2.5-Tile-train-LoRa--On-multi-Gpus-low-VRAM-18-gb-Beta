@@ -50,10 +50,20 @@ def main() -> None:
         # rank breaks DDP's _streams[device.index] lookup on this torch build.)
         env["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
         env.pop("CUDA_VISIBLE_DEVICES", None)
+        # Capture each rank's stdout+stderr to a per-rank log file so a crash (OOM /
+        # deadlock / traceback) is ALWAYS visible afterward, instead of being lost to
+        # ComfyUI's terminal. Writes <cwd>/multigpu_logs/<script>_rank<rank>.log.
+        try:
+            _logdir = os.path.join(os.getcwd(), "multigpu_logs")
+            os.makedirs(_logdir, exist_ok=True)
+            _logn = os.path.join(_logdir, f"{os.path.basename(args.script)}_rank{rank}.log")
+            _logf = open(_logn, "w", encoding="utf-8")
+        except Exception:
+            _logf = None
         # torch 2.13 on this Windows build has no libuv; force the classic TCP store.
         env["USE_LIBUV"] = "0"
         cmd = [VENV_PY, "-u", args.script, *args.script_args]
-        procs.append(subprocess.Popen(cmd, env=env))
+        procs.append(subprocess.Popen(cmd, env=env, stdout=_logf, stderr=_logf))
 
     rc = 0
     # Wait for every rank. If ANY rank exits non-zero (e.g. CUDA OOM), kill the rest

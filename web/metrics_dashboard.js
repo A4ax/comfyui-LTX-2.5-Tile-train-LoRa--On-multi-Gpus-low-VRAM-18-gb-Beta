@@ -160,7 +160,9 @@ const EXT = {
         tile("Audio loss", "m-aloss", "#f0a35e");
         tile("s/step", "m-ss", "#e6edf3");
         tile("step/s", "m-sps", "#e6edf3");
-        // VRAM tiles with a mini bar inside
+        // VRAM tiles with a mini bar inside. Built dynamically: one tile per GPU key
+        // seen in telemetry (gpu0, gpu1, gpu2, ...) so any rig size is shown, plus a
+        // "VRAM total" tile. Each GPU's bar cap = its actual memory if known, else 12GB.
         function vramTile(label, id, cap) {
           const d = document.createElement("div");
           d.style.cssText = "background:#161b22;border:1px solid #21262d;border-radius:6px;padding:6px 8px;";
@@ -172,8 +174,8 @@ const EXT = {
           grid.appendChild(d);
           return d;
         }
-        vramTile("VRAM gpu0", "m-vr0", 12);
-        vramTile("VRAM gpu1", "m-vr1", 12);
+        // GPU tiles are added lazily in the update loop (from telemetry peak_vram keys).
+        const gpuTileIds = [];   // e.g. ["m-vr0", "m-vr1", "m-vr2"]
         vramTile("VRAM total", "m-vrt", 24);
         root.appendChild(grid);
 
@@ -295,14 +297,26 @@ const EXT = {
             set("m-ss", Number.isFinite(ss) ? ss.toFixed(2) : "—");
             set("m-sps", Number.isFinite(sps) ? sps.toFixed(2) : "—");
             const lastVR = vrams.length ? vrams[vrams.length - 1] : {};
-            const g0 = lastVR.gpu0, g1 = lastVR.gpu1;
             const setBar = (id, val, cap) => {
               set(id, Number.isFinite(val) ? val.toFixed(1) : "—");
               const bar = root.querySelector("#" + id + "-bar");
               if (bar) bar.style.width = (Number.isFinite(val) ? Math.min(100, (val / cap) * 100) : 0) + "%";
             };
-            setBar("m-vr0", g0, 12);
-            setBar("m-vr1", g1, 12);
+            // Add one VRAM tile per GPU key seen in telemetry (gpu0, gpu1, gpu2, ...).
+            // This makes the node show every GPU on the rig instead of only gpu0/gpu1.
+            if (lastVR && typeof lastVR === "object") {
+              Object.keys(lastVR).sort().forEach((gk, i) => {
+                const id = "m-vr" + i;
+                if (gpuTileIds.indexOf(id) === -1) {
+                  gpuTileIds.push(id);
+                  const tile = vramTile("VRAM " + gk, id, 12);
+                  // Keep GPU tiles above the "VRAM total" tile.
+                  const tot = root.querySelector("#m-vrt").parentElement;
+                  grid.insertBefore(tile, tot);
+                }
+                setBar(id, lastVR[gk], 12);
+              });
+            }
             set("m-vrt", totalVRAM > 0 ? totalVRAM.toFixed(1) : "—");
             const tbar = root.querySelector("#m-vrt-bar");
             if (tbar) tbar.style.width = (totalVRAM > 0 ? Math.min(100, (totalVRAM / 24) * 100) : 0) + "%";

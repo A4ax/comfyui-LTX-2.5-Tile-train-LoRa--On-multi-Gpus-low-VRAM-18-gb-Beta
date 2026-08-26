@@ -690,20 +690,28 @@ def main():
                 dist.recv(g, src=rank + 1)
                 g = g.to(device)
                 grads = torch.autograd.grad(xh, [x_in] + trainable_this, grad_outputs=g.to(xh.dtype),
-                                            allow_unused=True, retain_graph=True)
+                                            allow_unused=True,
+                                            # Keep the graph only if the audio grad channel
+                                            # will re-use it; otherwise free it right here
+                                            # (prevents a per-step graph leak -> OOM).
+                                            retain_graph=(audio_base is not None))
                 for p, gr in zip(trainable_this, grads[1:]):
                     if gr is not None:
                         p.grad = gr.detach().to(p.device) if p.grad is None else p.grad.add_(gr.detach().to(p.device))
                 if rank > 0:
                     d_in = grads[0] if grads[0] is not None else torch.zeros_like(x_in)
                     dist.send(_comm(d_in, torch.float32).contiguous(), rank - 1)
-                # Audio gradient channel (voice+face).
+                # Audio gradient channel (voice+face). This is the LAST autograd.grad
+                # call against the shared compute graph, so use retain_graph=False to
+                # release the graph/its intermediates. (The video autograd.grad above
+                # keeps it alive for this call.) Freeing it prevents the graph from
+                # accumulating every step -> a VRAM leak that OOMs long runs.
                 if audio_base is not None:
                     ga = _comm_zeros(ah, torch.float32)
                     dist.recv(ga, src=rank + 1)
                     ga = ga.to(device)
                     grads_a = torch.autograd.grad(ah, [a_in] + trainable_this, grad_outputs=ga.to(ah.dtype),
-                                                  allow_unused=True, retain_graph=True)
+                                                  allow_unused=True, retain_graph=False)
                     for p, gr in zip(trainable_this, grads_a[1:]):
                         if gr is not None:
                             p.grad = gr.detach().to(p.device) if p.grad is None else p.grad.add_(gr.detach().to(p.device))
@@ -736,6 +744,12 @@ def main():
             finite = bool(torch.all(torch.cat([torch.isfinite(g).reshape(-1) for g in grads_])).item()) if grads_ else True
         opt.step()
         opt.zero_grad()
+        # Reclaim released-but-cached memory every LOG_EVERY steps. The caching
+        # allocator holds freed blocks; on long runs this fragmentation can push a
+        # heavy sample over the card limit (the step-76 OOM). Freeing every few
+        # steps costs nothing measurable and keeps live memory tight.
+        if step % LOG_EVERY == 0:
+            torch.cuda.empty_cache()
         peak = torch.cuda.max_memory_allocated(device) / 1e9
         dt = time.time() - t1
         now = time.time()
