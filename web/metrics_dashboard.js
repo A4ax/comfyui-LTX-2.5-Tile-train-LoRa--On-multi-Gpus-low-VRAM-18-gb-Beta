@@ -226,7 +226,7 @@ const EXT = {
           hctx.stroke();
           hctx.fillStyle = "#0b0f14"; hctx.fillRect(0, h - 16, w, 16);
           hctx.fillStyle = "#8b949e"; hctx.font = "11px Inter";
-          hctx.fillText(`loss min ${min.toFixed(3)} max ${max.toFixed(3)} (last ${data.length})  cyan=total orange=audio`, 6, h - 4);
+          hctx.fillText(`loss min ${min.toFixed(3)} max ${max.toFixed(3)} (last ${data.length})  blue=video orange=audio`, 6, h - 4);
         };
 
         histBtn.addEventListener("click", () => {
@@ -270,7 +270,7 @@ const EXT = {
               else if (e.event === "step") {
                 if (e.total_steps) total = e.total_steps;
                 if (e.step >= step) step = e.step;
-                if (Number.isFinite(e.loss)) { loss = e.loss; losses.push(e.loss); }
+                if (Number.isFinite(e.loss)) { loss = e.loss; losses.push(Number.isFinite(e.loss_video) ? e.loss_video : e.loss); }
                 if (Number.isFinite(e.loss_video)) vl = e.loss_video;
                 aLosses.push(Number.isFinite(e.loss_audio) ? e.loss_audio : null);
                 if (Number.isFinite(e.loss_audio)) al = e.loss_audio;

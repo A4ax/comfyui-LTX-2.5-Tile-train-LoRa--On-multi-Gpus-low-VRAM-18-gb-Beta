@@ -168,7 +168,7 @@ function addProgressWidget(nodeType) {
       stats.style.cssText = "display:flex;flex-direction:column;gap:6px;font-size:13px;";
       stats.innerHTML =
         '<div><span style="color:#8b949e">step</span> <b id="pr-step">0</b><span style="color:#8b949e"> / <span id="pr-total">0</span></b></div>' +
-        '<div><span style="color:#8b949e">loss</span> <b id="pr-loss" style="color:#22d3ee">—</b></div>' +
+        '<div><span style="color:#8b949e">video</span> <b id="pr-loss" style="color:#22d3ee">—</b></div>' +
         '<div><span style="color:#8b949e">audio</span> <b id="pr-loss-audio" style="color:#f0a35e">—</b></div>' +
         '<div><span style="color:#8b949e">ETA</span> <b id="pr-eta">—</b></div>' +
         '<div><span style="color:#8b949e">rate</span> <b id="pr-rate">—</b></div>';
@@ -247,7 +247,7 @@ function addProgressWidget(nodeType) {
         const span = (max - min) || 1;
         const drawableH = Math.max(h - LABEL_H - 4, 10);
         const yFor = (v) => 4 + (1 - (v - min) / span) * (drawableH - 8);
-        // cyan: total loss
+        // blue: video loss
         ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 2; ctx.beginPath();
         data.forEach((v, i) => {
           const x = (i / (data.length - 1)) * w;
@@ -270,7 +270,7 @@ function addProgressWidget(nodeType) {
         ctx.fillStyle = "#0b0f14";
         ctx.fillRect(0, h - LABEL_H, w, LABEL_H);
         ctx.fillStyle = "#8b949e"; ctx.font = "11px Inter, system-ui";
-        ctx.fillText(`loss  min ${min.toFixed(3)}  max ${max.toFixed(3)}  (last ${data.length})   cyan=total  orange=audio`, 6, h - 5);
+        ctx.fillText(`loss  min ${min.toFixed(3)}  max ${max.toFixed(3)}  (last ${data.length})   blue=video  orange=audio`, 6, h - 5);
       };
 
       const resize = () => {
@@ -300,7 +300,7 @@ function addProgressWidget(nodeType) {
           if (!telPath) telPath = await deriveTelPath(node);
           if (!telPath) return;
           const evs = await fetchTelemetry(telPath);
-          let total = 0, step = 0, loss = NaN, lossA = NaN, eta = NaN, rate = NaN;
+          let total = 0, step = 0, loss = NaN, lossV = NaN, lossA = NaN, eta = NaN, rate = NaN;
           let done = false;
           const losses = [];
           const audioLosses = [];
@@ -310,7 +310,8 @@ function addProgressWidget(nodeType) {
             else if (e.event === "step") {
               if (e.total_steps) total = e.total_steps;
               if (e.step >= step) step = e.step;
-              if (Number.isFinite(e.loss)) { loss = e.loss; losses.push(e.loss); }
+              if (Number.isFinite(e.loss_video)) lossV = e.loss_video;
+              if (Number.isFinite(e.loss)) { loss = e.loss; losses.push(lossV); }
               audioLosses.push(Number.isFinite(e.loss_audio) ? e.loss_audio : null);
               if (Number.isFinite(e.loss_audio)) lossA = e.loss_audio;
               if (Number.isFinite(e.eta_s)) eta = e.eta_s;
@@ -326,7 +327,7 @@ function addProgressWidget(nodeType) {
           ring.setAttribute("stroke-dashoffset", C * (1 - pct / 100));
           root.querySelector("#pr-step").textContent = step;
           root.querySelector("#pr-total").textContent = total;
-          root.querySelector("#pr-loss").textContent = Number.isFinite(loss) ? loss.toFixed(4) : "—";
+          root.querySelector("#pr-loss").textContent = Number.isFinite(lossV) ? lossV.toFixed(4) : "—";
           root.querySelector("#pr-loss-audio").textContent = Number.isFinite(lossA) ? lossA.toFixed(4) : "—";
           root.querySelector("#pr-eta").textContent = formatEta(eta);
           root.querySelector("#pr-rate").textContent = Number.isFinite(rate) ? `${rate.toFixed(2)} step/s` : "—";
