@@ -12,7 +12,7 @@ This project **experimentally enables LoRA fine-tuning of the LTX-2.5 22B *disti
 
 Key improvements for reliability (long-run OOM fixes) and usability:
 
-- **`checkpoint_level` = `off / auto / on`** on the Train node (replaces the old ON/OFF checkbox). `auto` does **selective per-block gradient checkpointing**: it keeps full-OFF speed on cards that fit, and automatically checkpoint-corrects the blocks that won't fit a small GPU (e.g. the 4060), so you never OOM. `on` recomputes every block (smallest footprint, safest). `off` is fastest but needs lots of VRAM headroom.
+- **`checkpoint_level` = `on / auto / off`** on the Train node (replaces the old ON/OFF checkbox). **DEFAULT is now `on`** for safety. `on` recomputes every block (smallest live footprint, the reliable choice — keep it ON). `auto` does selective per-block gradient checkpointing (speed/VRAM balance: keeps OFF speed on cards that fit, checkpoints only the blocks that won't fit a small GPU like the 4060) but can still fragment a big GPU. `off` is fastest but needs lots of VRAM headroom.
 - **`cudaMallocAsync` CUDA allocator (the OOM fix).** The engine now defaults to CUDA's stream-ordered pool allocator, which pools memory and avoids the classic caching-allocator **fragmentation**. This is the real fix for the sporadic `CUDA out of memory` that killed long runs (steps ~55/76/87) even when live VRAM was far below the card limit. (`expandable_segments` is compiled out of the Windows torch 2.13 wheel, so it cannot be used here; `cudaMallocAsync` is the available equivalent. Override with `LTX_ALLOC` if needed.)
 - **Long-run OOM fixed.** Root cause was the native allocator fragmenting under the checkpoint-recompute churn (a 256 MiB bnb dequantize transient failed while only ~7 GiB was live). Fixed via the allocator change + releasing the autograd graph (`retain_graph=False` on the last gradient pass) + periodic `torch.cuda.empty_cache()`.
 - **`cudaMallocAsync` + `checkpoint_level = on`** is the recommended stable config on 12 GB cards: ~3+ GB free headroom on the 3060s with no OOM.
@@ -345,8 +345,8 @@ Pre-encodes captions with the Gemma text encoder (optional; auto-run if omitted)
 - **run_name** — your LoRA's base name.
 - **auto_unique** 🆕 — ON by default: if the output folder exists, it appends a timestamp so **retraining never overwrites the old LoRA**.
 - **steps / lr / rank / alpha / checkpoint_interval** — hyper-params.
-- **`checkpoint_level`** — `off / auto / on`.
-  - **`on` (recommended / safest):** recomputes every block's forward during backward, so the **live VRAM footprint is the smallest**. **Keep it ON.** The bnb-NF4 backward allocates transient dequantize tensors (up to ~256 MB-1 GB); with `off` or `auto` leaving blocks recompute-on-demand, the classic allocator *fragments* and a transient OOMs **even when live usage is far below the card limit** (we measured this at steps 55/76/87: "Currently allocated ~7 GiB, Requested 256 MiB, Free 0 bytes").
+- **`checkpoint_level`** — `on / auto / off` (default `on`).
+  - **`on` (default / safest):** recomputes every block's forward during backward, so the **live VRAM footprint is the smallest**. **Keep it ON.** The bnb-NF4 backward allocates transient dequantize tensors (up to ~256 MB-1 GB); with `off` or `auto` leaving blocks recompute-on-demand, the classic allocator *fragments* and a transient OOMs **even when live usage is far below the card limit** (we measured this at steps 55/76/87: "Currently allocated ~7 GiB, Requested 256 MiB, Free 0 bytes").
   - **`off`** — fastest, but only safe if every GPU has a lot of headroom. On 12 GB cards with face+voice at 512x512x17 / rank 32 it OOMs.
   - **`auto`** — keeps OFF speed on cards that fit and checkpoints only the blocks that don't; a good middle, but `on` is the reliability guarantee.
 - **Optimizer** 🆕 — the LoRA is trained with **8-bit AdamW** (bitsandbytes) → smaller optimizer-state VRAM and a slightly lower peak.

@@ -43,14 +43,19 @@ class O2noorLTX25Int4Train:
                                                 "tooltip": "Save a LoRA checkpoint every N steps (0 = off)."}),
                 "blocking": ("BOOLEAN", {"default": True,
                                   "tooltip": "Run in the foreground (blocks) so ComfyUI waits for completion."}),
-                "checkpoint_level": (["off", "auto", "on"], {"default": "auto",
+                "checkpoint_level": (["off", "auto", "on"], {"default": "on",
                     "tooltip": "Gradient-checkpointing behavior.\n"
-                               "  auto = selective per-block (recommended): keeps maximum OFF speed while "
-                               "automatically checkpointing only the blocks that won't fit a small GPU (e.g. "
-                               "the 4060), so every GPU that can hold full-OFF does, and the rest never OOM.\n"
+                               "  on   = checkpoint every block (DEFAULT, most VRAM-safe): the smallest live "
+                               "VRAM footprint and the reliable choice — keep it ON. The bnb-NF4 backward "
+                               "allocates transient dequantize tensors (up to ~256 MB-1 GB); with off/auto "
+                               "leaving blocks recompute-on-demand the allocator fragments and a transient "
+                               "OOMs even when live VRAM is far below the card limit.\n"
+                               "  auto = selective per-block (speed/VRAM balance): keeps OFF speed on cards "
+                               "that fit, checkpoints only the blocks that won't fit a small GPU (e.g. the "
+                               "4060). Faster than on, but still can fragment a big GPU — only if you "
+                               "need the speed.\n"
                                "  off  = no checkpointing (fastest, most VRAM). Use only when all GPUs are "
-                               "large enough (e.g. all 12 GB) — otherwise a small GPU may OOM.\n"
-                               "  on   = checkpoint every block (most VRAM-safe, slowest)."}),
+                               "large enough (e.g. all 12 GB) — otherwise a small GPU may OOM."}),
                 "use_wsl": ("BOOLEAN", {"default": False,
                     "tooltip": "Run the engine inside WSL2 (Linux) to use the faster NCCL multi-GPU backend.\n"
                                "  OFF = current native-Windows engine (gloo).\n"
@@ -142,9 +147,9 @@ class O2noorLTX25Int4Train:
             "bnb_pt": int4_model_file if backend == "bnb_nf4" else None,
             "dataset_root": dataset.get("dataset_root", ""),
             "device_config": model.get("device_config") or {},
-            "checkpoint_level": str(checkpoint_level or "auto"),
+            "checkpoint_level": str(checkpoint_level or "on"),
             # Backward-compat placeholder (engine now reads checkpoint_level above).
-            "gradient_checkpointing": bool(str(checkpoint_level or "auto") == "on"),
+            "gradient_checkpointing": bool(str(checkpoint_level or "on") == "on"),
             # Optional low-VRAM feed-forward chunking (from O2noorLTX25ChunkFeedForward,
             # stamped on the model input).
             "ffn_chunks": int(model.get("ffn_chunks", 1) or 1),
