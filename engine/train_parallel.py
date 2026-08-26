@@ -499,7 +499,10 @@ def main():
         # ckpt-ON floor (weights + LoRA + 8-bit Adam + ctx), scaled by shard size and
         # by LoRA rank (rank 32 LoRA is ~2x the params of rank 16).
         _floor = 4.85 + (END - START) * 0.07 + (RANK_R / 16.0) * 0.15
-        _headroom = 2.0                                           # GB safety margin
+        _headroom = 4.0                                           # GB safety margin (leave lots of room for
+                                                                  # bnb backward dequantize transients + allocator
+                                                                  # fragmentation on the heaviest shard; too small
+                                                                  # a margin made the 21-block rank OOM at step ~3).
         # Per-block ckpt-OFF activation cost. GROWS with sequence length more than
         # linearly (attention + FFN activations per token), so scale by (SEQ/512)^1.4.
         # If face+voice, the audio branch threads activations through every block too.
