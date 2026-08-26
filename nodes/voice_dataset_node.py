@@ -250,6 +250,17 @@ class O2noorLTX25Int4VoiceDataset:
             os.remove(status_path)
         except Exception:
             pass
+        # Announce the live status path to the frontend at encode start (mirrors
+        # what the Train node does for Metrics/Logs via ltx25:telemetry), so the
+        # Dataset Timeline widget can poll DURING the encode instead of only seeing
+        # the finished result. Best-effort — never blocks or breaks the pipeline.
+        try:
+            import server
+            server.PromptServer.instance.send_sync(
+                "ltx25:dataset_status",
+                {"status_path": output_dir, "status_file": os.path.basename(status_path)})
+        except Exception as e:
+            print(f"[O2noorLTX25Int4VoiceDataset] (status notify skipped: {e})", flush=True)
         _status(status_path, stage="start", mode=mode, max_segments=max_segments,
                 seg=round(segdur, 3), width=width, height=height, fps=fps)
 

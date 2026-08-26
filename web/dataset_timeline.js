@@ -226,16 +226,26 @@ const EXT = {
         return b;
       }
 
-      // ---- Resolve the monitored dataset root purely from the WIRED dataset ----
-      // No hardcoded/default path: the root is read from the connected dataset
-      // node's output (getInputData(0)) via the graph link, matching logs_live.
+      // Live status path delivered by the Voice Dataset node at encode start via
+      // ltx25:dataset_status (mirrors how Train pushes ltx25:telemetry). When set,
+      // it takes priority over wiring so the widget polls the live encode.
+      let liveStatusPath = null;
+      const onDatasetStatus = (event) => {
+        const d = event && event.detail;
+        if (d && d.status_path) liveStatusPath = d.status_path;
+      };
+      api.addEventListener("ltx25:dataset_status", onDatasetStatus);
+
+      // ---- Resolve the monitored dataset root ----
+      // Priority: 1) live path broadcast by Voice Dataset at encode start,
+      // 2) the connected dataset node's output dict (dataset_root, via getInputData),
+      // 3) the graph-linked source node's output_dir widget. No hardcoded paths.
       function resolvePath() {
+        if (liveStatusPath && liveStatusPath.trim()) return liveStatusPath.trim();
         try {
-          // Prefer the directly-inbound dataset dict (dataset_root inside it).
           const d = that.getInputData ? that.getInputData(0) : null;
           if (d && d.dataset_root) return d.dataset_root;
         } catch (e) { /* ignore */ }
-        // Fallback: walk the graph link to the source node's own dataset_root output.
         try {
           const input = (that.inputs || []).find((i) => i.name === "dataset");
           if (input && input.link != null) {
@@ -253,6 +263,7 @@ const EXT = {
       }
 
       const isWired = () => {
+        if (liveStatusPath && liveStatusPath.trim()) return true;
         try {
           const d = that.getInputData ? that.getInputData(0) : null;
           if (d && d.dataset_root) return true;
@@ -279,6 +290,7 @@ const EXT = {
       const onRemoved = nodeType.prototype.onRemoved;
       nodeType.prototype.onRemoved = function () {
         clearInterval(timer);
+        try { api.removeEventListener("ltx25:dataset_status", onDatasetStatus); } catch (e) {}
         onRemoved?.apply(this, arguments);
       };
       return r;
