@@ -244,18 +244,25 @@ class O2noorLTX25Int4VoiceDataset:
 
         _log_line("[dataset] starting dataset build (face+voice)")
 
-        # Clear stale artifacts from earlier runs (different buckets) so the trainer
-        # never samples leftover latents of a mismatched resolution. Remove the NESTED
-        # scenes subdirs too (audio_latents/scenes, latents/scenes, conditions/scenes) —
-        # otherwise stale audio latents for image-only samples persist into the next run
-        # and silently turn image steps into voice steps (so no images show in the log).
+        # Clear the whole cache ONLY when overwrite is ON (full rebuild). When OFF
+        # (default), KEEP latents/audio_latents/conditions so re-runs skip unchanged
+        # items (process_videos/precompute skip cached outputs -> fast re-runs).
+        # The stale-audio-latent problem is prevented by the AUDIO_IDX gate in the
+        # training engine (a fresh dataset.json decides voice vs image per sample),
+        # so the unconditional delete is no longer needed.
         import shutil
-        for stale in ("scenes", "latents", "audio_latents", "conditions"):
-            _sd = os.path.join(output_dir, stale)
-            shutil.rmtree(_sd, ignore_errors=True)
-            os.makedirs(_sd, exist_ok=True)
-        log_parts.append("[clean] cleared stale scenes/latents/audio_latents/conditions")
-        _log_line("[clean] cleared stale scenes/latents/audio_latents/conditions")
+        if overwrite:
+            for stale in ("scenes", "latents", "audio_latents", "conditions"):
+                _sd = os.path.join(output_dir, stale)
+                shutil.rmtree(_sd, ignore_errors=True)
+                os.makedirs(_sd, exist_ok=True)
+            log_parts.append("[clean] cleared stale scenes/latents/audio_latents/conditions")
+            _log_line("[clean] cleared stale scenes/latents/audio_latents/conditions")
+        else:
+            for stale in ("scenes", "latents", "audio_latents", "conditions"):
+                os.makedirs(os.path.join(output_dir, stale), exist_ok=True)
+            log_parts.append("[clean] kept existing caches (overwrite=off)")
+            _log_line("[clean] kept existing caches (overwrite=off)")
 
         # Shared per-model load-time log (truncated each run); each engine script appends to it.
         lt_path = os.path.join(output_dir, "load_times.jsonl")
@@ -270,8 +277,15 @@ class O2noorLTX25Int4VoiceDataset:
         idx = 0
         n_video_clips = 0
 
-        def make_clip(cmd, out, tag):
+        def make_clip(cmd, out, tag, src=None):
             nonlocal idx
+            # Reuse an existing clip when not overwriting (keeps its mtime so
+            # process_videos' source-newer check skips re-encoding unchanged sources).
+            if not overwrite and os.path.exists(out) and os.path.getsize(out) > 0:
+                if src is None or not os.path.exists(src) or os.path.getmtime(src) <= os.path.getmtime(out):
+                    clips.append(os.path.join("scenes", os.path.basename(out)))
+                    idx += 1
+                    return True
             try:
                 r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
             except Exception as e:
@@ -314,7 +328,7 @@ class O2noorLTX25Int4VoiceDataset:
                 else:
                     cmd += ["-an"]
                 cmd += ["-pix_fmt", "yuv420p", out]
-                if not make_clip(cmd, out, f"vid-seg {seg}"):
+                if not make_clip(cmd, out, f"vid-seg {seg}", src=v):
                     break
                 n_video_clips += 1
                 seg += 1
@@ -326,7 +340,7 @@ class O2noorLTX25Int4VoiceDataset:
             cmd = [ffmpeg, "-y", "-loop", "1", "-i", img, "-t", f"{segdur:.3f}", "-r", str(fps),
                    "-vf", f"scale={width}:{height}"]
             cmd += ["-c:v", ("h264_nvenc" if nvenc else "libx264"), "-an", "-pix_fmt", "yuv420p", out]
-            make_clip(cmd, out, f"img {i}")
+            make_clip(cmd, out, f"img {i}", src=img)
 
         if not clips:
             return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts) or "ffmpeg failed"},)
@@ -341,6 +355,9 @@ class O2noorLTX25Int4VoiceDataset:
                 clip_abs = os.path.join(output_dir, clips[i])   # clips[i] = "scenes/img_XXX.mp4"
                 wav_name = os.path.splitext(os.path.basename(clip_abs))[0] + ".wav"
                 wav_abs = os.path.join(audio_dir, wav_name)
+                if os.path.exists(wav_abs) and os.path.getsize(wav_abs) > 0 and os.path.getmtime(wav_abs) >= os.path.getmtime(clip_abs):
+                    audio_rels[i] = os.path.join("audio", wav_name)
+                    continue
                 r = subprocess.run([ffmpeg, "-y", "-i", clip_abs, "-vn", "-ac", "1", "-ar", "16000",
                                     "-c:a", "pcm_s16le", wav_abs],
                                    capture_output=True, text=True, timeout=120)
@@ -369,18 +386,35 @@ class O2noorLTX25Int4VoiceDataset:
         os.makedirs(cap_out, exist_ok=True)
         if cap_src is None:
             cap_src = os.path.join(output_dir, "captions_cache")
-            rc, tail = engine_driver.run_engine_live("encode_captions.py", [
-                "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
-                "--sidecar", cfg.get("embeddings_processor_bf16", ""),
-                "--captions", trigger_word,
-                "--out-dir", cap_src,
-                "--gpus", te_gpus,
-                "--layers-per-gpu", te_layers,
-                "--connectors-device", _dc.get("connectors") or "gpu0",
-                "--load-times", lt_path], log_file=_live_log)
-            log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")
-            if rc != 0:
-                return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
+            # Skip the GPU encode when this caption is already cached (fast re-runs —
+            # otherwise the 24 GB Gemma is reloaded on every dataset build).
+            _cached = False
+            try:
+                with open(os.path.join(cap_src, "index.json"), encoding="utf-8") as _f:
+                    _idx = json.load(_f)
+                _e = next((x for x in _idx if x.get("caption") == trigger_word), None) or (_idx[0] if _idx else None)
+                _cf = (_e or {}).get("path") or (_e or {}).get("cond") or ""
+                _cfp = _cf if os.path.isabs(_cf) else os.path.join(cap_src, _cf)
+                if _cfp and os.path.exists(_cfp):
+                    _cached = True
+            except Exception:
+                _cached = False
+            if not _cached:
+                rc, tail = engine_driver.run_engine_live("encode_captions.py", [
+                    "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
+                    "--sidecar", cfg.get("embeddings_processor_bf16", ""),
+                    "--captions", trigger_word,
+                    "--out-dir", cap_src,
+                    "--gpus", te_gpus,
+                    "--layers-per-gpu", te_layers,
+                    "--connectors-device", _dc.get("connectors") or "gpu0",
+                    "--load-times", lt_path], log_file=_live_log)
+                log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")
+                if rc != 0:
+                    return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
+            else:
+                log_parts.append("[captions] reusing cached caption embeddings (no GPU encode)")
+                _log_line("[captions] reusing cached caption embeddings (no GPU encode)")
         with open(os.path.join(cap_src, "index.json"), encoding="utf-8") as f:
             cap_index = json.load(f)
         by_caption = {e.get("caption"): e for e in cap_index}
@@ -390,12 +424,16 @@ class O2noorLTX25Int4VoiceDataset:
             return ({"dataset_root": output_dir, "ok": False,
                      "log_tail": f"no cached condition found for caption '{trigger_word}' in {cap_src}."},)
         import shutil
+        copied = 0
         for s in samples:
             video_rel = s["video"]
             out_cond = os.path.join(cap_out, os.path.splitext(video_rel)[0] + ".pt")
             os.makedirs(os.path.dirname(out_cond), exist_ok=True)
-            shutil.copyfile(cond_file, out_cond)
-        log_parts.append(f"[captions] copied GPU-encoded conditions (caption '{trigger_word}')")
+            if not os.path.exists(out_cond) or os.path.getmtime(cond_file) > os.path.getmtime(out_cond):
+                shutil.copyfile(cond_file, out_cond)
+                copied += 1
+        log_parts.append(f"[captions] copied GPU-encoded conditions (caption '{trigger_word}', {copied} new)")
+        _log_line(f"[captions] copied {copied} conditions (caption '{trigger_word}')")
 
         # 3b) In voice mode, precompute the connector-applied video/audio embeds OFFLINE
         #     (once) so the training engine does NOT load the embeddings processor on the
