@@ -8,7 +8,8 @@
 //   - audio extract / caption encode / precompute / VAE encode bars,
 //   - per-model load times (seconds) with a running total,
 //   - a live, auto-scrolling status event log.
-// Also polls /ltx25/system for a live GPU/RAM strip when show_gpu is on.
+// The dataset root is auto-followed from the connected Voice Dataset node when
+// dataset_path is left empty, so it watches the exact directory being encoded.
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 
@@ -21,11 +22,11 @@ const EXT = {
     const onNodeCreated = nodeType.prototype.onNodeCreated;
     nodeType.prototype.onNodeCreated = function () {
       const r = onNodeCreated?.apply(this, arguments);
-      let timer = null, gpuTimer = null;
+      const that = this;
+      let timer = null;
 
       const pathWidget = (this.widgets || []).find((w) => w.name === "dataset_path");
       const pollWidget = (this.widgets || []).find((w) => w.name === "poll_seconds");
-      const gpuWidget = (this.widgets || []).find((w) => w.name === "show_gpu");
       if (pathWidget) pathWidget.type = "text";
 
       const root = document.createElement("div");
@@ -38,10 +39,6 @@ const EXT = {
       const canvas = document.createElement("div");
       canvas.style.cssText = "display:flex;flex-direction:column;gap:10px;margin-top:8px;";
       root.appendChild(canvas);
-
-      const gpuStrip = document.createElement("div");
-      gpuStrip.style.cssText = "margin-top:10px;";
-      root.appendChild(gpuStrip);
 
       const widget = this.addDOMWidget("ltx25-dataset-timeline", "ltx25-dataset-timeline", root, {
         getValue: () => "", setValue: () => {}, serializeValue: () => "",
@@ -205,40 +202,48 @@ const EXT = {
         return b;
       }
 
+      // ---- Auto-follow the connected dataset node for its root ----
+      function resolvePath() {
+        // If the user typed a path, respect it.
+        if (pathWidget && pathWidget.value && pathWidget.value.trim()) return pathWidget.value.trim();
+        // Otherwise walk to the connected Voice Dataset node and read its dataset_root
+        // from the serialized widget value.
+        try {
+          const input = (that.inputs || []).find((i) => i.name === "dataset");
+          if (input && input.link != null) {
+            const link = that.graph && that.graph.links[input.link];
+            if (link) {
+              const src = that.graph.getNodeById(link.origin_id);
+              if (src && (src.widgets || []).length) {
+                const w = src.widgets.find((x) => x.name === "dataset_path" ||
+                  x.name === "output_dir" || x.name === "dataset_root");
+                if (w && w.value) return w.value;
+              }
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return "";
+      }
+
       // ---- Poll loop ----
       async function tick() {
-        const path = pathWidget ? (pathWidget.value || "") : "";
+        let path = pathWidget ? (pathWidget.value || "") : "";
+        if (!path || !path.trim()) path = resolvePath();
         try {
           const url = "/ltx25/dataset_timeline?path=" + encodeURIComponent(path);
           const resp = await api.fetchApi(url);
           render(await resp.json());
         } catch (e) { /* ignore */ }
       }
-      async function tickGpu() {
-        if (!gpuWidget || gpuWidget.value === false) { gpuStrip.innerHTML = ""; return; }
-        try {
-          const resp = await api.fetchApi("/ltx25/system");
-          const data = await resp.json();
-          gpuStrip.innerHTML = "";
-          const gpus = (data.gpus || []).map((g) =>
-            '<div style="flex:1;min-width:70px;background:#161b22;border:1px solid #21262d;border-radius:7px;padding:5px 7px;">' +
-            '<div style="font-size:9px;color:#8b949e">GPU ' + g.index + "</div>" +
-            '<div style="font-size:12px;font-weight:700;color:' + (g.util > 0 ? "#8ff08a" : "#e6edf3") + '">' + Math.round(g.util) + "%</div>" +
-            '<div style="font-size:9px;color:#8b949e">' + g.mem_used_gb + "/" + g.mem_total_gb + " GB</div></div>").join("");
-          gpuStrip.style.display = "flex"; gpuStrip.style.gap = "6px";
-          gpuStrip.innerHTML = gpus || '<div style="color:#8b949e;font-size:10px">nvidia-smi unavailable</div>';
-        } catch (e) { /* ignore */ }
-      }
 
       spinner();
-      tick(); tickGpu();
+      tick();
       const poll = () => Math.max(0.5, Number(pollWidget ? pollWidget.value : 1) || 1) * 1000;
       timer = setInterval(tick, poll());
-      gpuTimer = setInterval(tickGpu, 1000);
 
       const onRemoved = nodeType.prototype.onRemoved;
       nodeType.prototype.onRemoved = function () {
-        clearInterval(timer); clearInterval(gpuTimer);
+        clearInterval(timer);
         onRemoved?.apply(this, arguments);
       };
       return r;

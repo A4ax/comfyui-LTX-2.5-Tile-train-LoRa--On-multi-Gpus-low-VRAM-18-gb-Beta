@@ -40,8 +40,6 @@ class O2noorLTX25Int4DatasetTimeline:
                 }),
                 "poll_seconds": ("INT", {"default": 1, "min": 0.5, "max": 10.0, "step": 0.5,
                                          "tooltip": "How often the dashboard refreshes (seconds)."}),
-                "show_gpu": ("BOOLEAN", {"default": True,
-                                         "tooltip": "Show a live GPU/RAM strip too."}),
             },
         }
 
@@ -51,7 +49,24 @@ class O2noorLTX25Int4DatasetTimeline:
     TITLE = "O2noor LTX 2.5 Dataset Timeline"
     OUTPUT_NODE = True
 
-    def noop(self, dataset=None, dataset_path="", poll_seconds=1.0, show_gpu=True):
+    def noop(self, dataset=None, dataset_path="", poll_seconds=1.0):
+        # Auto-follow the connected dataset node: if the dataset output carries a
+        # dataset_root and the user hasn't overridden dataset_path, push the real
+        # path back into the widget so the JS polls the correct directory.
+        try:
+            root = ""
+            if isinstance(dataset, dict):
+                root = dataset.get("dataset_root") or root
+            want_override = (dataset_path and dataset_path != "") and (
+                not (self.widgets and any(w.name == "dataset_path" for w in self.widgets)) or
+                (self.widgets and any(w.name == "dataset_path" and (w.value == "" or w.value is None) for w in self.widgets))
+            )
+            if root and (not dataset_path or want_override):
+                for w in (self.widgets or []):
+                    if w.name == "dataset_path":
+                        w.value = root
+        except Exception:
+            pass
         return ()
 
 
