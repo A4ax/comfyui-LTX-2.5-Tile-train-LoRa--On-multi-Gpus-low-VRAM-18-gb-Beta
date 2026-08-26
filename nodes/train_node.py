@@ -173,12 +173,10 @@ class O2noorLTX25Int4Train:
 
         # Auto-detect the user's GPUs — never hardcode. Use all available CUDA
         # devices (capped by the block split if one was provided via Tile Config).
-        import torch as _torch
-        try:
-            n_gpu = _torch.cuda.device_count() if _torch.cuda.is_available() else 0
-        except Exception:
-            n_gpu = 0
-        world = min(run_cfg["world"] or n_gpu, n_gpu) if n_gpu else 1
+        # Physical count via nvidia-smi: ComfyUI's in-process torch can be masked
+        # to one GPU on Windows, but the engine subprocess must use ALL GPUs.
+        n_gpu = engine_driver.detect_cuda_gpus()
+        world = min(run_cfg["world"] or n_gpu, n_gpu)
         world = max(1, world)
         devices = ",".join(str(i) for i in range(world))
 

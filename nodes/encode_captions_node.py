@@ -14,13 +14,8 @@ from . import engine_driver
 
 
 def _detect_gpus():
-    """Number of CUDA-visible GPUs (respects CUDA_VISIBLE_DEVICES)."""
-    try:
-        import torch
-        n = torch.cuda.device_count()
-        return max(1, n)
-    except Exception:
-        return 1
+    """Number of physical CUDA GPUs (independent of ComfyUI's in-process mask)."""
+    return engine_driver.detect_cuda_gpus()
 
 
 def _default_layer_split(n):

@@ -12,6 +12,34 @@ from .. import pack_config
 DEVICE_CHOICES = ["auto", "cuda:0", "cuda:1", "cuda:2", "cuda:3", "cpu"]
 
 
+def detect_cuda_gpus():
+    """Number of PHYSICAL CUDA GPUs, independent of ComfyUI's in-process
+    CUDA_VISIBLE_DEVICES restriction.
+
+    ComfyUI forces `CUDA_VISIBLE_DEVICES=0` on Windows when no --cuda-device is
+    passed (main.py), so torch.cuda.device_count() inside the ComfyUI process can
+    under-report. nvidia-smi lists ALL physical GPUs regardless of the mask, so we
+    count those first and fall back to torch.cuda.device_count().
+    """
+    try:
+        env = dict(os.environ)
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=10, env=env)
+        n = len([ln for ln in out.stdout.splitlines() if ln.strip()])
+        if n > 0:
+            return n
+    except Exception:
+        pass
+    try:
+        import torch
+        n = torch.cuda.device_count()
+        return max(1, n)
+    except Exception:
+        return 1
+
+
 def pick_device(choice: str):
     """Resolve 'auto' / 'cuda:N' / 'cpu' -> concrete device string.
     auto = first available CUDA GPU, else cpu (laptop-safe)."""
@@ -27,7 +55,7 @@ def pick_device(choice: str):
     if choice.startswith("cuda"):
         try:
             import torch
-            if torch.cuda.is_available() and choice in (f"cuda:{i}" for i in range(torch.cuda.device_count())):
+            if torch.cuda.is_available() and choice in (f"cuda:{i}" for i in range(detect_cuda_gpus())):
                 return choice
         except Exception:
             pass

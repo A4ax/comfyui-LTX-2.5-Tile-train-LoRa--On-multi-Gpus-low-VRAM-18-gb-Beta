@@ -53,11 +53,10 @@ def _gemma_device(device, fallback="0"):
 
 
 def _auto_gpus():
-    """List all available CUDA devices as a comma string (never hardcode 0,1)."""
+    """List all physical CUDA devices as a comma string (never hardcode 0,1)."""
     try:
-        import torch as _t
-        n = _t.cuda.device_count() if _t.cuda.is_available() else 0
-        return ",".join(str(i) for i in range(max(1, n)))
+        n = engine_driver.detect_cuda_gpus()
+        return ",".join(str(i) for i in range(n))
     except Exception:
         return "0"
 
