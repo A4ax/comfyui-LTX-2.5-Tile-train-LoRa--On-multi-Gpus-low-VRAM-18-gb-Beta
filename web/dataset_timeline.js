@@ -249,6 +249,25 @@ const EXT = {
       // 3) getInputData(0).dataset_root,
       // 4) graph-linked source output_dir widget. On ComfyUI 0.33.4 links live in
       // graph._links (a Map), NOT graph.links, so index via _links.get(link).
+      // Reload-safe graph scan: find the dataset-source node (Voice Dataset / Dataset)
+      // anywhere in the graph and read its output_dir/dataset_root widget. This recovers
+      // the path on a FRESH page load (reload-safe), matching how metrics_dashboard.js
+      // scans for the Train node's telemetry_path. Returns "" if none found.
+      function findSourceWidget() {
+        try {
+          const nodes = (that.graph && that.graph._nodes) || [];
+          for (const o of nodes) {
+            const t = o.type || "";
+            if (t.indexOf("VoiceDataset") < 0 && t.indexOf("Int4Dataset") < 0 && t.indexOf("Dataset") < 0) continue;
+            if (o.widgets && o.widgets.length) {
+              const w = o.widgets.find((x) => x.name === "output_dir" || x.name === "dataset_root");
+              if (w && w.value) return w.value;
+            }
+          }
+        } catch (e) { /* ignore */ }
+        return "";
+      }
+
       function resolvePath() {
         if (liveStatusPath && liveStatusPath.trim()) return liveStatusPath.trim();
         if (capturedPath && capturedPath.trim()) return capturedPath.trim();
@@ -269,7 +288,7 @@ const EXT = {
             }
           }
         } catch (e) { /* ignore */ }
-        return "";
+        return findSourceWidget();
       }
 
       const isWired = () => {
@@ -279,8 +298,9 @@ const EXT = {
           const d = that.getInputData ? that.getInputData(0) : null;
           if (d && d.dataset_root) return true;
           const input = (that.inputs || []).find((i) => i.name === "dataset");
-          return !!(input && input.link != null);
-        } catch (e) { return false; }
+          if (input && input.link != null) return true;
+        } catch (e) { /* ignore */ }
+        return findSourceWidget() !== "";
       };
 
       // Capture the dataset_root from the wired dataset output when this node runs.
