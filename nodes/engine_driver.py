@@ -132,3 +132,54 @@ def run_engine(script, args=None, *, visible_devices=None, timeout=86400, workdi
     r = subprocess.run(argv, cwd=wd, env=env, capture_output=True, text=True, timeout=timeout)
     tail = (r.stdout or "")[-3000:] + "\n" + (r.stderr or "")[-3000:]
     return r.returncode, tail
+
+
+_CURRENT_DATASET_LOG = {"path": ""}
+
+
+def set_dataset_log(path):
+    """Register the live dataset-progress log path (set by the Voice Dataset node at start)."""
+    _CURRENT_DATASET_LOG["path"] = str(path or "")
+
+
+def get_dataset_log():
+    """Return the currently registered dataset-progress log path ("" if none)."""
+    return _CURRENT_DATASET_LOG["path"]
+
+
+def run_engine_live(script, args=None, *, log_file=None, visible_devices=None, timeout=86400, workdir=None):
+    """Run an engine script synchronously while STREAMING its stdout+stderr to `log_file`
+    in real time (appended), so a ComfyUI widget can show live progress. Returns (rc, tail).
+    `log_file` is optional; when None, behaves like run_engine (capture only)."""
+    argv, env = build_engine_cmd(script, args, visible_devices=visible_devices)
+    wd = workdir or engine_workdir()
+    print(f"[LTX25] running: {' '.join(argv)}", flush=True)
+    if log_file and os.path.dirname(log_file):
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    try:
+        proc = subprocess.Popen(argv, cwd=wd, env=env, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+    except Exception as e:
+        return 1, f"[engine] launch failed: {e}"
+    tail_buf = []
+
+    def _write(line):
+        tail_buf.append(line)
+        if len(tail_buf) > 6000:
+            tail_buf.pop(0)
+        if log_file:
+            try:
+                with open(log_file, "a", encoding="utf-8", errors="replace") as _f:
+                    _f.write(line)
+            except Exception:
+                pass
+
+    try:
+        for line in iter(proc.stdout.readline, ""):
+            if line:
+                _write(line)
+        proc.wait(timeout=timeout)
+    except Exception as e:
+        proc.kill()
+        return 1, "".join(tail_buf[-6000:]) + f"\n[engine] error: {e}"
+    return proc.returncode, "".join(tail_buf[-3000:])

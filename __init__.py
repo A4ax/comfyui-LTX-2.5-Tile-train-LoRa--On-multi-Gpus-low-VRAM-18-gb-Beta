@@ -28,6 +28,7 @@ from .nodes.batch_prompt_node import O2noorLTX25BatchPrompt
 from .nodes.progress_summary_node import O2noorLTX25Int4Progress, O2noorLTX25Int4SummaryViewer
 from .nodes.metrics_node import O2noorLTX25Int4Metrics
 from .nodes.system_monitor_node import O2noorLTX25Int4SystemMonitor
+from .nodes.dataset_progress_node import O2noorLTX25Int4DatasetProgress
 from .nodes.chunk_ffn_node import O2noorLTX25ChunkFeedForward
 
 WEB_DIRECTORY = "./web"
@@ -48,6 +49,7 @@ NODE_CLASS_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": O2noorLTX25Int4SummaryViewer,
     "O2noorLTX25Int4Metrics": O2noorLTX25Int4Metrics,
     "O2noorLTX25Int4SystemMonitor": O2noorLTX25Int4SystemMonitor,
+    "O2noorLTX25Int4DatasetProgress": O2noorLTX25Int4DatasetProgress,
     "O2noorLTX25ChunkFeedForward": O2noorLTX25ChunkFeedForward,
 }
 
@@ -67,6 +69,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "O2noorLTX25Int4SummaryViewer": "O2noor LTX 2.5 Summary (Info)",
     "O2noorLTX25Int4Metrics": "O2noor LTX 2.5 Metrics Dashboard",
     "O2noorLTX25Int4SystemMonitor": "O2noor LTX 2.5 System Monitor",
+    "O2noorLTX25Int4DatasetProgress": "O2noor LTX 2.5 Dataset Progress",
     "O2noorLTX25ChunkFeedForward": "modify version from kjNodes ltx 2.5 Chunk FeedForward",
 }
 
@@ -158,6 +161,23 @@ async def _telemetry(request: web.Request) -> web.Response:
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             lines = f.read().splitlines()[-1000:]
+        return web.json_response({"ok": True, "lines": lines})
+    except Exception as e:
+        return web.json_response({"ok": False, "error": str(e)})
+
+
+async def _dataset_progress(request: web.Request) -> web.Response:
+    """Return the tail of the currently registered dataset-progress log (live)."""
+    path = request.query.get("path") or ""
+    if not path:
+        from .nodes import engine_driver
+        path = engine_driver.get_dataset_log()
+    if not path or not os.path.exists(path):
+        return web.json_response({"ok": False, "error": "no dataset progress log"})
+    try:
+        n = int(request.query.get("lines") or 400)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            lines = f.read().splitlines()[-max(10, n):]
         return web.json_response({"ok": True, "lines": lines})
     except Exception as e:
         return web.json_response({"ok": False, "error": str(e)})
@@ -348,3 +368,4 @@ routes.get("/ltx25/thumb")(_thumb)
 routes.get("/ltx25/load_times")(_load_times)
 routes.get("/ltx25/latest_run")(_latest_run)
 routes.get("/ltx25/system")(_system)
+routes.get("/ltx25/dataset_progress")(_dataset_progress)

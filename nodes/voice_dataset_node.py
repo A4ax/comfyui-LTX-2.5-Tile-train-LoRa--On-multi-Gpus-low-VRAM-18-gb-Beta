@@ -225,6 +225,26 @@ class O2noorLTX25Int4VoiceDataset:
         os.makedirs(clips_dir, exist_ok=True)
         log_parts = []
 
+        # Live dataset-progress log: registered server-side so a Dataset Progress node can
+        # stream it in ComfyUI. Path = <output_dir>/dataset_progress.log (no hardcoding).
+        _live_log = os.path.join(output_dir, "dataset_progress.log")
+        try:
+            with open(_live_log, "w", encoding="utf-8", errors="replace") as _lf:
+                _lf.write(f"[dataset] output_dir={output_dir}\n")
+        except Exception:
+            _live_log = None
+        engine_driver.set_dataset_log(_live_log)
+
+        def _log_line(msg):
+            if _live_log:
+                try:
+                    with open(_live_log, "a", encoding="utf-8", errors="replace") as _lf:
+                        _lf.write(str(msg) + "\n")
+                except Exception:
+                    pass
+
+        _log_line("[dataset] starting dataset build (face+voice)")
+
         # Clear stale artifacts from earlier runs (different buckets) so the trainer
         # never samples leftover latents of a mismatched resolution. Remove the NESTED
         # scenes subdirs too (audio_latents/scenes, latents/scenes, conditions/scenes) —
@@ -236,6 +256,7 @@ class O2noorLTX25Int4VoiceDataset:
             shutil.rmtree(_sd, ignore_errors=True)
             os.makedirs(_sd, exist_ok=True)
         log_parts.append("[clean] cleared stale scenes/latents/audio_latents/conditions")
+        _log_line("[clean] cleared stale scenes/latents/audio_latents/conditions")
 
         # Shared per-model load-time log (truncated each run); each engine script appends to it.
         lt_path = os.path.join(output_dir, "load_times.jsonl")
@@ -299,6 +320,7 @@ class O2noorLTX25Int4VoiceDataset:
                 n_video_clips += 1
                 seg += 1
             log_parts.append(f"[split] video split into {seg} x {segdur:.3f}s clips (dur={dur:.1f}s)")
+        _log_line(f"[split] video split into {seg} x {segdur:.3f}s clips (dur={dur:.1f}s)")
 
         for i, img in enumerate(image_paths):
             out = os.path.join(clips_dir, f"img_{idx:03d}.mp4")
@@ -328,6 +350,7 @@ class O2noorLTX25Int4VoiceDataset:
                 else:
                     log_parts.append(f"[audio] extract failed for {clips[i]}: {(r.stderr or '')[-300:]}")
             log_parts.append(f"[audio] extracted voice for {sum(1 for a in audio_rels if a)}/{n_video_clips} video clips")
+            _log_line(f"[audio] extracted voice for {sum(1 for a in audio_rels if a)}/{n_video_clips} video clips")
 
         # 2) build dataset.json (audio column only for video clips, in voice mode)
         samples = []
@@ -340,13 +363,14 @@ class O2noorLTX25Int4VoiceDataset:
         with open(dataset_json, "w", encoding="utf-8") as f:
             json.dump(samples, f, indent=2)
         log_parts.append(f"dataset.json written ({len(samples)} samples, mode={mode})")
+        _log_line(f"dataset.json written ({len(samples)} samples, mode={mode})")
 
         # 3) captions -> conditions (video + audio prompt embeds) on the GPUs.
         cap_out = os.path.join(output_dir, "conditions")
         os.makedirs(cap_out, exist_ok=True)
         if cap_src is None:
             cap_src = os.path.join(output_dir, "captions_cache")
-            rc, tail = engine_driver.run_engine("encode_captions.py", [
+            rc, tail = engine_driver.run_engine_live("encode_captions.py", [
                 "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
                 "--captions", trigger_word,
@@ -354,7 +378,7 @@ class O2noorLTX25Int4VoiceDataset:
                 "--gpus", te_gpus,
                 "--layers-per-gpu", te_layers,
                 "--connectors-device", _dc.get("connectors") or "gpu0",
-                "--load-times", lt_path])
+                "--load-times", lt_path], log_file=_live_log)
             log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")
             if rc != 0:
                 return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
@@ -378,12 +402,12 @@ class O2noorLTX25Int4VoiceDataset:
         #     (once) so the training engine does NOT load the embeddings processor on the
         #     GPUs -> keeps training VRAM at face-only levels (no OOM).
         if use_audio:
-            rc, tail = engine_driver.run_engine("precompute_audio_embeds.py", [
+            rc, tail = engine_driver.run_engine_live("precompute_audio_embeds.py", [
                 "--conditions-dir", cap_out,
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
                 "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
                 "--gpus", te_gpus,
-                "--load-times", lt_path])
+                "--load-times", lt_path], log_file=_live_log)
             log_parts.append(f"[audio] precompute embeds rc={rc}\n{tail}")
             if rc != 0:
                 return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
@@ -414,7 +438,7 @@ class O2noorLTX25Int4VoiceDataset:
             vid_args += ["--tile-overlap", str(int(vae_tile_overlap))]
         if overwrite:
             vid_args.append("--overwrite")
-        rc, tail = engine_driver.run_engine("process_videos.py", vid_args)
+        rc, tail = engine_driver.run_engine_live("process_videos.py", vid_args, log_file=_live_log)
         log_parts.append(f"[process_videos] rc={rc}\n{tail}")
         if rc != 0:
             return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
