@@ -39,7 +39,6 @@ import bitsandbytes as bnb  # noqa: E402
 import safetensors  # noqa: E402
 
 from load_times import record  # noqa: E402
-from dataset_status import status as _st  # noqa: E402
 
 from ltx_trainer.model_loader import load_embeddings_processor  # noqa: E402
 from ltx_trainer import gemma_8bit  # noqa: E402
@@ -239,8 +238,6 @@ def main():
     import gc; gc.collect()
     torch.cuda.empty_cache()
     print(f"[encode] Gemma freed, vram={vram()} ({time.time()-t0:.0f}s)", flush=True)
-    _st(args.load_times, stage="encode_captions", sub="gemma_loaded", n=len(captions),
-        note=f"{len(captions)} caption(s) via Gemma", t0=round(time.time()-t0, 1))
 
     print(f"[encode] loading embeddings processor on {proc_dev}...", flush=True)
     _t = time.time()
@@ -288,8 +285,6 @@ def main():
     gc.collect(); torch.cuda.empty_cache()
     print(f"[encode] DONE {len(captions)} captions in {time.time()-t0:.0f}s; GPUs freed vram={vram()}", flush=True)
     print("[encode] PASS", flush=True)
-    _st(args.load_times, stage="encode_captions_done", n=len(captions), rc=0,
-        note="caption encoding complete", t0=round(time.time()-t0, 1))
 
 
 if __name__ == "__main__":

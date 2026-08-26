@@ -15,9 +15,8 @@ import json
 import os
 import subprocess
 
-from . import engine_driver
-from ..engine.dataset_status import status as _status
 from .. import pack_config
+from . import engine_driver
 
 
 def _find_ffmpeg():
@@ -243,27 +242,6 @@ class O2noorLTX25Int4VoiceDataset:
         with open(lt_path, "w", encoding="utf-8") as _lf:
             _lf.write("")
 
-        # Live timeline status channel (append-only). Delete any stale file so the
-        # Dataset Timeline node shows only this run's events.
-        status_path = os.path.join(output_dir, "status.jsonl")
-        try:
-            os.remove(status_path)
-        except Exception:
-            pass
-        # Announce the live status path to the frontend at encode start (mirrors
-        # what the Train node does for Metrics/Logs via ltx25:telemetry), so the
-        # Dataset Timeline widget can poll DURING the encode instead of only seeing
-        # the finished result. Best-effort — never blocks or breaks the pipeline.
-        try:
-            import server
-            server.PromptServer.instance.send_sync(
-                "ltx25:dataset_status",
-                {"status_path": output_dir, "status_file": os.path.basename(status_path)})
-        except Exception as e:
-            print(f"[O2noorLTX25Int4VoiceDataset] (status notify skipped: {e})", flush=True)
-        _status(status_path, stage="start", mode=mode, max_segments=max_segments,
-                seg=round(segdur, 3), width=width, height=height, fps=fps)
-
         # 1) cut training clips: videos -> auto-split into segdur clips (audio kept in voice mode);
         #    images -> one clip each (face-only, no audio).
         clips = []
@@ -283,8 +261,6 @@ class O2noorLTX25Int4VoiceDataset:
             if ok:
                 clips.append(os.path.join("scenes", os.path.basename(out)))
                 idx += 1
-                _status(status_path, stage="cut", done=idx, tag=tag,
-                        clip=os.path.basename(out))
                 return True
             # failed or empty (e.g. seek past end of video) -> clean up + signal stop.
             if os.path.exists(out):
@@ -331,8 +307,6 @@ class O2noorLTX25Int4VoiceDataset:
             cmd += ["-c:v", ("h264_nvenc" if nvenc else "libx264"), "-an", "-pix_fmt", "yuv420p", out]
             make_clip(cmd, out, f"img {i}")
 
-        _status(status_path, stage="cut_done", done=len(clips),
-                note="ffmpeg clip splitting finished")
         if not clips:
             return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts) or "ffmpeg failed"},)
 
@@ -340,7 +314,6 @@ class O2noorLTX25Int4VoiceDataset:
         #     --with-audio has an explicit `audio` column to encode into audio_latents.
         audio_rels = [None] * len(clips)
         if use_audio and n_video_clips > 0:
-            _status(status_path, stage="audio_extract", done=0, total=n_video_clips)
             audio_dir = os.path.join(output_dir, "audio")
             os.makedirs(audio_dir, exist_ok=True)
             for i in range(n_video_clips):
@@ -352,7 +325,6 @@ class O2noorLTX25Int4VoiceDataset:
                                    capture_output=True, text=True, timeout=120)
                 if r.returncode == 0 and os.path.exists(wav_abs) and os.path.getsize(wav_abs) > 0:
                     audio_rels[i] = os.path.join("audio", wav_name)
-                    _status(status_path, stage="audio_extract", done=i + 1, total=n_video_clips)
                 else:
                     log_parts.append(f"[audio] extract failed for {clips[i]}: {(r.stderr or '')[-300:]}")
             log_parts.append(f"[audio] extracted voice for {sum(1 for a in audio_rels if a)}/{n_video_clips} video clips")
@@ -374,7 +346,6 @@ class O2noorLTX25Int4VoiceDataset:
         os.makedirs(cap_out, exist_ok=True)
         if cap_src is None:
             cap_src = os.path.join(output_dir, "captions_cache")
-            _status(status_path, stage="encode_captions", note="Gemma + embeddings processor")
             rc, tail = engine_driver.run_engine("encode_captions.py", [
                 "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
@@ -384,7 +355,6 @@ class O2noorLTX25Int4VoiceDataset:
                 "--layers-per-gpu", te_layers,
                 "--connectors-device", _dc.get("connectors") or "gpu0",
                 "--load-times", lt_path])
-            _status(status_path, stage="encode_captions_done", rc=rc)
             log_parts.append(f"[captions] auto GPU encode rc={rc}\n{tail}")
             if rc != 0:
                 return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
@@ -408,14 +378,12 @@ class O2noorLTX25Int4VoiceDataset:
         #     (once) so the training engine does NOT load the embeddings processor on the
         #     GPUs -> keeps training VRAM at face-only levels (no OOM).
         if use_audio:
-            _status(status_path, stage="precompute_audio_embeds", note="connector-applied video/audio embeds")
             rc, tail = engine_driver.run_engine("precompute_audio_embeds.py", [
                 "--conditions-dir", cap_out,
                 "--sidecar", cfg.get("embeddings_processor_bf16", ""),
                 "--text-encoder", model.get("text_encoder") or cfg.get("text_encoder", ""),
                 "--gpus", te_gpus,
                 "--load-times", lt_path])
-            _status(status_path, stage="precompute_audio_embeds_done", rc=rc)
             log_parts.append(f"[audio] precompute embeds rc={rc}\n{tail}")
             if rc != 0:
                 return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
@@ -446,11 +414,7 @@ class O2noorLTX25Int4VoiceDataset:
             vid_args += ["--tile-overlap", str(int(vae_tile_overlap))]
         if overwrite:
             vid_args.append("--overwrite")
-        _status(status_path, stage="vae_encode",
-                note=f"video{' + audio' if use_audio else ''} VAE latents",
-                with_audio=bool(use_audio))
         rc, tail = engine_driver.run_engine("process_videos.py", vid_args)
-        _status(status_path, stage="vae_encode_done", rc=rc)
         log_parts.append(f"[process_videos] rc={rc}\n{tail}")
         if rc != 0:
             return ({"dataset_root": output_dir, "ok": False, "log_tail": "\n".join(log_parts)},)
@@ -473,5 +437,4 @@ class O2noorLTX25Int4VoiceDataset:
         }
         print(f"[O2noorLTX25Int4VoiceDataset] done ok=True device={dev} mode={mode} "
               f"samples={len(samples)}", flush=True)
-        _status(status_path, stage="done", ok=True, samples=len(samples))
         return (ds,)

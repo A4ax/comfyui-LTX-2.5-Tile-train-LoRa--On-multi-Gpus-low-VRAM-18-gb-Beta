@@ -407,26 +407,6 @@ def _record(load_times_path: str | None, component: str, load_s: float) -> None:
         pass
 
 
-def _status(load_times_path: str | None, **fields) -> None:
-    """Append a live status event to status.jsonl (beside load_times.jsonl).
-
-    Driven on every processed batch so the Dataset Timeline node can show
-    real-time VAE-encode progress instead of looking frozen. Best-effort.
-    """
-    if not load_times_path:
-        return
-    try:
-        import time as _t
-        p = Path(load_times_path).with_name("status.jsonl")
-        rec = dict(fields)
-        rec["t"] = round(_t.time(), 3)
-        rec["ts"] = _t.strftime("%H:%M:%S")
-        with open(p, "a", encoding="utf-8") as f:
-            f.write(json.dumps(rec, separators=(",", ":")) + "\n")
-    except Exception:
-        pass
-
-
 def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
     dataset_file: str | Path,
     video_column: str,
@@ -557,8 +537,6 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
         _lt = time.perf_counter()
         vae = load_video_vae_encoder(video_vae_path, device=torch_device, dtype=torch.bfloat16)
     _record(load_times_path, "video_vae", time.perf_counter() - _lt)
-    _status(load_times_path, stage="vae_encode", sub="video", note="video VAE latents (face)",
-            total=len(dataloader.dataset))
 
     audio_vae_encoder = None
     audio_processor = None
@@ -579,13 +557,10 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
                 n_fft=audio_vae_encoder.n_fft,
             ).to(torch_device)
         _record(load_times_path, "audio_vae", time.perf_counter() - _lt)
-        _status(load_times_path, stage="vae_encode", sub="audio", note="audio VAE latents (voice)",
-                total=len(dataloader.dataset))
 
     # Track audio statistics
     audio_success_count = 0
     audio_skip_count = 0
-    _t0 = time.perf_counter()
 
     # Process batches
     with Progress(
@@ -610,6 +585,7 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
                     vae=vae, video=video, use_tiling=vae_tiling,
                     tile_size=tile_size, tile_overlap=tile_overlap, scale_factors=scale_factors,
                 )
+
             # Save latents for each item in batch
             for i in range(len(batch["relative_path"])):
                 output_rel_path = Path(batch["main_media_relative_path"][i]).with_suffix(".pt")
@@ -664,8 +640,6 @@ def compute_latents(  # noqa: PLR0912, PLR0913, PLR0915
                         audio_skip_count += 1
 
             progress.advance(task)
-            _status(load_times_path, stage="vae_encode", sub="video", done=len(dataloader),
-                    total=len(dataloader.dataset), elapsed_s=round(time.perf_counter() - _t0, 1))
 
     logger.info(f"Processed {len(dataloader.dataset)} videos -> {output_path}")  # type: ignore[arg-type]
     if with_audio:
