@@ -19,7 +19,25 @@ import types
 from dataclasses import replace
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# CUDA allocator selection. MUST be set before `import torch` (the allocator backend is
+# chosen at load time and can't change afterward). The engine's default goal was
+# expandable_segments (CUDA VMM) to avoid the classic caching-allocator fragmentation
+# that sporadically OOMs long runs (a 256 MiB bnb dequantize_4bit transient fails with
+# "Free 0 bytes" while only ~7 GB is live). BUT on Windows torch builds before 2.14 the
+# VMM path is COMPILED OUT (PYTORCH_C10_DRIVER_API_SUPPORTED is only defined on
+# non-Windows), so expandable_segments silently falls back to 'native' — the fragmented
+# allocator. The next-best fragmentation-free choice that IS available on this build is
+# CUDA's stream-ordered pool allocator `cudaMallocAsync` (verified: set-before-import ->
+# backend=cudaMallocAsync works here with a 3-GPU distributed engine). We default to
+# cudaMallocAsync so long runs don't fragment; if a newer torch makes expandable_segments
+# work on Windows, set LTX_ALLOC=expandable_segments (or it auto-falls back here).
+#   - LTX_ALLOC = "cudaMallocAsync" | "expandable_segments" | a raw PYTORCH_CUDA_ALLOC_CONF
+#     value you want; overrides the default below.
+_LTX_ALLOC = os.environ.get("LTX_ALLOC", "").strip()
+if _LTX_ALLOC:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = _LTX_ALLOC
+else:
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "backend:cudaMallocAsync"
 
 _ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _ENGINE_DIR)
@@ -38,6 +56,12 @@ USE_NCCL = (sys.platform != "win32") and dist.is_nccl_available()
 dist.init_process_group("nccl" if USE_NCCL else "gloo",
                         init_method="tcp://127.0.0.1:29570", rank=rank, world_size=world)
 print(f"[TR] dist backend={'nccl' if USE_NCCL else 'gloo'}", flush=True)
+try:
+    _alloc_backend = torch.cuda.memory.get_allocator_backend()
+    _alloc_conf = os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "")
+    print(f"[TR] CUDA allocator backend={_alloc_backend} conf='{_alloc_conf}'", flush=True)
+except Exception:
+    pass
 
 
 def _comm(x, dtype=None):
