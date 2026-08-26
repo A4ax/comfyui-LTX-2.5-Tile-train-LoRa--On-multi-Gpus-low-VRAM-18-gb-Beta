@@ -491,7 +491,18 @@ def main():
     # OOMs, while the thin blocks still get OFF speed.
     ckpt_level = str(cfg.get("checkpoint_level", "") or "").strip().lower()
     if ckpt_level == "auto":
-        _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
+        # Budget from ACTUAL FREE VRAM right now, not the nominal card size. The engine
+        # runs alongside ComfyUI on the SAME GPUs (train_node sets CUDA_VISIBLE_DEVICES
+        # to all cards), so the real ceiling is what mem_get_info reports free at load —
+        # not the marketed 12.9 GB. Nominal sizing under-reserved on this shared rig and
+        # lets `auto` leave too many blocks OFF, so the native (non-expandable-segments)
+        # CUDA allocator fragments and the bnb backward's 256 MiB dequantize OOMs even
+        # though live usage is far below the card limit.
+        try:
+            _free_gb, _tot_gb = torch.cuda.mem_get_info(device)
+            _card_mem = float(_free_gb) / 1e9
+        except Exception:
+            _card_mem = float(torch.cuda.get_device_properties(device).total_memory) / 1e9
         # CONSERVATIVE budget so `auto` NEVER lets a rank get close to OOM.
         # The old constants were calibrated on a light case (face-only, rank 16,
         # 512x512x9); with the user's real config (rank 32, face+voice, 512x512x17/25)
@@ -521,7 +532,7 @@ def main():
         # leave the earliest (thinnest) blocks OFF. OFF-set = the first `_off_budget`.
         _ckpt_fat = set(range(_off_budget, _n_blocks))            # relative indices -> checkpoint
         use_ckpt = _ckpt_fat                                       # non-bool => per-block set
-        print(f"[TR] rank{rank} checkpoint_level=auto: card={_card_mem:.1f}GB floor={_floor:.1f}GB "
+        print(f"[TR] rank{rank} checkpoint_level=auto: free={_card_mem:.1f}GB floor={_floor:.1f}GB "
               f"seq={SEQ} audio={int(TRAIN_AUDIO)} nblocks={_n_blocks} off_budget={_off_budget} "
               f"checkpointed_blocks={sorted(_ckpt_fat)} ({len(_ckpt_fat)}/{_n_blocks})", flush=True)
     else:
