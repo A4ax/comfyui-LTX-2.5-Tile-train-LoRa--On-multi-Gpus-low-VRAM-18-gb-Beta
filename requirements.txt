@@ -1,12 +1,30 @@
 # LTX-2.5 Int4 Tile-Train training engine dependencies.
-# These go in the ENGINE venv (not ComfyUI's own venv) ??" install.py handles this.
-# NOTE: torch + torchaudio are NOT listed here - install.py installs them with the
-# correct build (CUDA-enabled when an NVIDIA GPU is detected, else CPU-only), so a
-# fresh user never ends up with a CPU-only torch on a CUDA machine.
-optimum-quanto
-peft
-safetensors
+# These go in the ENGINE venv (not ComfyUI's own venv) — install.py handles this.
+# NOTE: torch / torchvision / torchaudio are NOT listed here — install.py installs
+# them with the correct build (CUDA-enabled cu130 when an NVIDIA GPU is detected,
+# else CPU-only), so a fresh user never ends up with a CPU-only torch on a CUDA
+# machine.
+#
+# Minimum versions mirror the stack this pack is developed and verified against.
+# The only hard pin is bitsandbytes (prebuilt Windows wheel, proven with the
+# bnb-NF4 backend).
+av>=14.2
+einops>=0.8
+imageio>=2.36
+imageio-ffmpeg>=0.6
+numpy>=1.26
+opencv-python>=4.10
+peft>=0.13
+pillow>=10
+protobuf>=4.25
+accelerate>=0.33
+safetensors>=0.4.2
+scipy>=1.11
+sentencepiece>=0.2
+soundfile>=0.12
+tokenizers>=0.19
+tqdm>=4.66
+transformers>=4.50
+huggingface_hub>=0.23
+pyyaml>=6.0
 bitsandbytes==0.50.1
-accelerate
-pyyaml
-ninja

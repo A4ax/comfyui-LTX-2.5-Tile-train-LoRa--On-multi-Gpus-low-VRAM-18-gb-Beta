@@ -1,0 +1,8 @@
+# OPTIONAL int2 / quanto backend (qint2 text encoder, int2 base model).
+# Not required for the default bnb-NF4 backend.
+# NOTE: optimum-quanto builds C extensions on some platforms — on Windows that
+# needs Visual Studio 2022 Build Tools (C++ workload) or a matching prebuilt
+# wheel. install.py installs this file in a NON-FATAL step: if it fails, the
+# default backend still works fine.
+optimum-quanto
+ninja

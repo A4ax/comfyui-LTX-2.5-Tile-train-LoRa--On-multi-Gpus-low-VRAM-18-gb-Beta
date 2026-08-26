@@ -31,6 +31,16 @@ VENV_PY = os.path.join(PACK_DIR, ".venv", "Scripts", "python.exe")
 
 
 def detect_gpus():
+    """Physical CUDA GPU count via nvidia-smi (independent of CUDA_VISIBLE_DEVICES),
+    with a torch fallback."""
+    try:
+        r = subprocess.run(["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=10)
+        n = len([ln for ln in r.stdout.splitlines() if ln.strip()])
+        if n > 0:
+            return n
+    except Exception:
+        pass
     try:
         import torch
         return torch.cuda.device_count() if torch.cuda.is_available() else 0
@@ -59,20 +69,46 @@ def _has_nvidia():
 
 
 def _install_torch(py):
-    """Install torch + torchaudio with the CORRECT build.
-    NVIDIA GPU present -> CUDA-enabled torch from the PyTorch CUDA index (so a fresh
-    machine never ends up with CPU-only torch). Otherwise -> default (CPU) torch."""
+    """Install torch + torchvision + torchaudio with the CORRECT build.
+    NVIDIA GPU present -> CUDA-enabled torch from the PyTorch cu130 index (so a fresh
+    machine never ends up with CPU-only torch, and RTX 50-series / Blackwell cards are
+    supported). Otherwise -> default (CPU) torch."""
     if not _has_nvidia():
         print("No NVIDIA GPU detected - installing CPU-only PyTorch (GPU training unavailable).", flush=True)
-        ok = _pip(py, ["install", "torch", "torchaudio"])
+        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio"])
         return ok
-    print("NVIDIA GPU detected - installing CUDA-enabled PyTorch (cu124)...", flush=True)
-    ok = _pip(py, ["install", "torch", "torchaudio",
-                   "--index-url", "https://download.pytorch.org/whl/cu124"])
+    print("NVIDIA GPU detected - installing CUDA-enabled PyTorch (cu130)...", flush=True)
+    ok = _pip(py, ["install", "torch", "torchvision", "torchaudio",
+                   "--index-url", "https://download.pytorch.org/whl/cu130"])
     if not ok:
         print("CUDA torch install failed; falling back to default (CPU) torch.", flush=True)
-        ok = _pip(py, ["install", "torch", "torchaudio"])
+        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio"])
     return ok
+
+
+def _detect_ffmpeg():
+    """True if the ffmpeg binary is on PATH (voice-dataset video cutting + torchaudio
+    audio decode on Windows need it)."""
+    try:
+        if shutil.which("ffmpeg"):
+            return True
+        r = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=15)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _install_ffmpeg_win():
+    """Try to install shared FFmpeg (BtbN) via winget on Windows; returns bool."""
+    try:
+        r = subprocess.run(
+            ["winget", "install", "--id", "BtbN.FFmpeg.GPL.Shared", "--silent",
+             "--accept-package-agreements", "--accept-source-agreements",
+             "--disable-interactivity"],
+            capture_output=True, text=True, timeout=300)
+        return r.returncode == 0
+    except Exception:
+        return False
 
 
 def _cl_detected():
@@ -101,7 +137,10 @@ def _check_env(py, models_root):
         import subprocess as _sp
         out = _sp.run([py, "-c", "import torch; print(torch.__version__, torch.cuda.is_available())"],
                       capture_output=True, text=True, timeout=120).stdout.strip()
-        if "True" in out:
+        if not out:
+            print(f"  [WARN] torch not installed in the engine python ({py}) yet - "
+                  "run install.py first (without --skip-install)", flush=True)
+        elif "True" in out:
             print(f"  [PASS] CUDA torch: {out}", flush=True)
         else:
             print(f"  [FAIL] torch is not CUDA-enabled: {out}", flush=True)
@@ -113,9 +152,11 @@ def _check_env(py, models_root):
     dm = os.path.join(models_root, "diffusion_models")
     te = os.path.join(models_root, "text_encoders")
     vae = os.path.join(models_root, "vae")
+    base = os.path.join(dm, "ltx-2.5-22b-distilled-bnb-nf4.safetensors")
+    if not os.path.exists(base):
+        base = os.path.join(dm, "ltx-2.5-22b-distilled-int4-main-v2.safetensors")
     need = {
-        "base model": os.path.join(dm, "ltx-2.5-22b-distilled-bnb-nf4.safetensors"),
-        "embeddings_processor": os.path.join(dm, "embeddings_processor_bf16.safetensors"),
+        "base model": base,
         "text encoder": os.path.join(te, "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors"),
         "video vae": os.path.join(vae, "ltx-2.5-video-vae-bf16.safetensors"),
         "audio vae": os.path.join(vae, "ltx-2.5-audio-vae-bf16.safetensors"),
@@ -125,7 +166,16 @@ def _check_env(py, models_root):
             print(f"  [PASS] {label}: {os.path.basename(p)}", flush=True)
         else:
             print(f"  [WARN] {label} missing: {p}", flush=True)
-    # 4. VS Build Tools (informational - only needed for int4/quanto backend)
+    ep = os.path.join(dm, "embeddings_processor_bf16.safetensors")
+    if os.path.exists(ep):
+        print("  [INFO] embeddings_processor present (optional - the base model is self-contained)", flush=True)
+    # 4. FFmpeg (voice-dataset video cutting + torchaudio decode on Windows)
+    if _detect_ffmpeg():
+        print("  [PASS] ffmpeg detected", flush=True)
+    else:
+        print("  [WARN] ffmpeg not found - voice-dataset/torchaudio need it. "
+              "Run:  winget install BtbN.FFmpeg.GPL.Shared", flush=True)
+    # 5. VS Build Tools (informational - only needed for int4/quanto backend)
     if _cl_detected():
         print("  [INFO] cl.exe / VS Build Tools detected", flush=True)
     else:
@@ -155,7 +205,7 @@ def main():
         if os.path.abspath(dest) != os.path.abspath(PACK_DIR):
             os.makedirs(dest, exist_ok=True)
             for item in os.listdir(PACK_DIR):
-                if item == ".venv" or item == "__pycache__":
+                if item == ".venv" or item == "__pycache__" or item == "results":
                     continue
                 s = os.path.join(PACK_DIR, item)
                 if os.path.isdir(s):
@@ -171,7 +221,7 @@ def main():
     py = a.python if (a.python and os.path.exists(a.python)) else None
     if py is None and os.path.exists(os.path.join(work_dir, ".venv", "Scripts", "python.exe")):
         py = os.path.join(work_dir, ".venv", "Scripts", "python.exe")
-    if py is None and not a.skip_install:
+    if py is None and not a.skip_install and not a.check:
         print("Creating engine venv...")
         venv = os.path.join(work_dir, ".venv")
         os.makedirs(venv, exist_ok=True)
@@ -181,8 +231,11 @@ def main():
             sys.exit(1)
         py = os.path.join(venv, "Scripts", "python.exe")
     if py is None or not os.path.exists(py):
-        print("Could not locate/create an engine python. Pass one with --python PATH")
-        sys.exit(1)
+        if a.skip_install or a.check:
+            py = pack_config.engine_python()  # config override -> local .venv -> current python
+        else:
+            print("Could not locate/create an engine python. Pass one with --python PATH")
+            sys.exit(1)
     print(f"engine python: {py}")
 
     if a.check:
@@ -191,12 +244,26 @@ def main():
         return
 
     if not a.skip_install:
-        # Install torch/torchaudio FIRST (with the correct CUDA vs CPU build) so the
-        # rest of the requirements (bitsandbytes etc.) resolve against the right torch.
+        # Install torch/torchvision/torchaudio FIRST (with the correct CUDA vs CPU
+        # build) so the rest of the requirements (bitsandbytes etc.) resolve against
+        # the right torch.
         _install_torch(py)
         if os.path.exists(os.path.join(work_dir, "requirements.txt")):
             print("Installing engine requirements (this may take a while)...")
             _pip(py, ["install", "-r", os.path.join(work_dir, "requirements.txt")])
+        # Optional int2/quanto backend - NON-FATAL. Default bnb-NF4 backend does not
+        # need it; optimum-quanto may need VS 2022 Build Tools on Windows.
+        reqs_int2 = os.path.join(work_dir, "requirements-int2.txt")
+        if os.path.exists(reqs_int2):
+            print("Installing optional int2/quanto extras (non-fatal)...")
+            try:
+                if not _pip(py, ["install", "-r", reqs_int2]):
+                    print("[WARN] int2/quanto extras failed to install - the int2/qint2 backend "
+                          "will be unavailable, but the default bnb-NF4 backend is unaffected. "
+                          "On Windows this usually needs VS 2022 Build Tools (C++ workload) or "
+                          "a matching prebuilt wheel.", flush=True)
+            except Exception as e:
+                print(f"[WARN] int2/quanto extras skipped ({e}). Default bnb-NF4 backend unaffected.", flush=True)
 
     # Write config.json (paths resolve relative to the installed pack folder).
     cfg = pack_config.load_config()
@@ -209,17 +276,31 @@ def main():
     path = pack_config.save_config(cfg)
     print(f"wrote config -> {path}")
     print(f"detected GPUs: {cfg['gpus']}")
+    if not _detect_ffmpeg():
+        print("\n[WARN] ffmpeg not found on PATH. The voice-dataset steps (video cutting) and")
+        print("torchaudio audio decode need it on Windows. Attempting to install shared")
+        print("FFmpeg via winget...")
+        if _install_ffmpeg_win():
+            print("  ffmpeg installed via winget - RESTART ComfyUI (and any terminals) so the new")
+            print("  PATH is picked up.")
+        else:
+            print("  Auto-install failed. Install it manually:")
+            print('    winget install BtbN.FFmpeg.GPL.Shared')
+            print("  or download from https://www.gyan.dev/ffmpeg/builds/ and add the bin folder to PATH.")
+    else:
+        print(f"ffmpeg detected: {shutil.which('ffmpeg')}")
     print("""
 Setup complete. Next steps:
   1. Put the models in your ComfyUI model folders:
-       models/diffusion_models/ltx-2.5-22b-distilled-bnb-nf4.safetensors
-       models/diffusion_models/embeddings_processor_bf16.safetensors
+       models/diffusion_models/ltx-2.5-22b-distilled-bnb-nf4.safetensors  (or int4-main-v2)
        models/text_encoders/gemma4-12b-with-proj-ltx-2.5-bf16.safetensors
        models/vae/ltx-2.5-video-vae-bf16.safetensors
        models/vae/ltx-2.5-audio-vae-bf16.safetensors
-  2. Restart ComfyUI and load 'ltx25_int4_train_workflow' from the Workflow menu.
-  3. GPUs are auto-detected — no GPU config needed. Use the Tile Config node only
+     (embeddings_processor_bf16.safetensors is OPTIONAL - the base model is self-contained.)
+  2. Restart ComfyUI and load 'ltx25_int4_face_voice_workflow' from the Workflow menu.
+  3. GPUs are auto-detected - no GPU config needed. Use the Tile Config node only
      if you want a custom split.
+  4. Run 'python install.py --check' anytime to verify GPU, CUDA torch, models and ffmpeg.
 """)
 
 

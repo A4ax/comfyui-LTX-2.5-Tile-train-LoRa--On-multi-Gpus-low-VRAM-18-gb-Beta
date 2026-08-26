@@ -418,7 +418,7 @@ The repo **is** a self-contained ComfyUI node pack — `engine/`, `packages/` (v
    ```bat
    "C/D:\ComfyUI\.venv\Scripts\python.exe" install.py
    ```
-   - The installer **auto-detects your GPU**: on an **NVIDIA** machine it installs **CUDA-enabled PyTorch** (cu124); otherwise CPU-only (with a warning that GPU training is unavailable).
+   - The installer **auto-detects your GPU**: on an **NVIDIA** machine it installs **CUDA-enabled PyTorch** (cu130, incl. `torchvision` + `torchaudio`); otherwise CPU-only (with a warning that GPU training is unavailable). The optional **int2/quanto** extras install in a **non-fatal** step (only needed for the 2-bit text encoder / int2 base).
    GPUs are **auto-detected** — no GPU config needed. Use the Tile Config node only if you want a custom split.
 5. **Verify the install is ready** (optional but recommended) — checks GPU, CUDA torch, and the models:
    ```bat
@@ -602,7 +602,7 @@ This repository contains **two distinct things**:
 
 ## ⚠️ Troubleshooting
 
-- **`torchaudio` can't decode audio** → install FFmpeg **shared** DLLs (`winget install BtbN.FFmpeg.GPL.Shared`). `install.py` sets this up.
+- **`torchaudio` can't decode audio** → install FFmpeg **shared** DLLs (`winget install BtbN.FFmpeg.GPL.Shared`) and restart ComfyUI. `install.py` detects ffmpeg and tries to install it for you if it's missing.
 - **OOM during voice+face** → the audio connector is **precomputed** (default) so the embeddings processor isn't on the GPUs during training.
 - **`CUDA out of memory` with `checkpoint_level` = `off`/`auto` (sporadic, at any step)** — this is allocator **fragmentation**, not real capacity: a small bnb `dequantize_4bit` transient fails even though live VRAM is far below the limit (log shows "Currently allocated ~7 GiB, Requested 256 MiB, Free 0 bytes"). **Fix: set `checkpoint_level = on`** (recompute every block → smallest footprint); the engine also uses the `cudaMallocAsync` pool allocator by default. Keep `on` for reliability. (expandable_segments is compiled out of Windows torch 2.13, so `cudaMallocAsync` is the working equivalent.)
 - **Stale-latent shape error** → the dataset node clears `latents/audio_latents/conditions` before each run; delete the dataset folder if it persists.
