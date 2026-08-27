@@ -131,7 +131,6 @@ AUDIO_CH = 8
 AUDIO_FB = 16
 TRAIN_AUDIO = False
 AUDIO_IDX = set()  # indices in dataset.json that have an `audio` key (voice samples)
-ORDER = []         # interleaved (balanced) order of dataset indices for training
 
 # RAM cache of the whole dataset (video latents, condition embeds, audio latents),
 # loaded ONCE at training start to eliminate per-step disk I/O.
@@ -316,35 +315,12 @@ def _load_real_sample(idx, device_, dtype, seq):
         return x0, buf.to(device_).to(dtype)
 
 
-def _build_interleave(voice_idx, image_idx):
-    """Return a balanced interleave of voice + image dataset indices.
-
-    Places voice/image samples so the mix stays proportional to the counts
-    throughout the run (works for any counts), and every index appears exactly once.
-    """
-    order = []
-    vi, ii = 0, 0
-    nv, ni = len(voice_idx), len(image_idx)
-    while vi < nv or ii < ni:
-        if vi < nv and ii < ni:
-            # Pick the type that is currently "behind" proportionally.
-            if vi * ni <= ii * nv:
-                order.append(voice_idx[vi]); vi += 1
-            else:
-                order.append(image_idx[ii]); ii += 1
-        elif vi < nv:
-            order.append(voice_idx[vi]); vi += 1
-        else:
-            order.append(image_idx[ii]); ii += 1
-    return order
-
-
 def make_av_modality(device_, dtype, seed, lf=LF, lh=LH, lw=LW, seq=SEQ, fps=FPS):
     """Build video + audio Modalities (voice+face) sharing one noise level `t`.
 
     Returns (mod_v, target_v, mod_a, target_a). mod_a is None if no audio latent /
     audio embeds exist for this sample (audio branch skipped that step)."""
-    idx = ORDER[seed % NUM_SAMPLES] if (ORDER and len(ORDER) == NUM_SAMPLES and NUM_SAMPLES > 0) else ((seed % NUM_SAMPLES) if NUM_SAMPLES > 0 else seed)
+    idx = (seed % NUM_SAMPLES) if NUM_SAMPLES > 0 else seed
     x0, ctx = _load_real_sample(idx, device_, dtype, seq)
     audio_lat = _load_audio_latent(idx, device_, dtype)
     _, audio_emb = _apply_embeddings(idx, device_, dtype)
@@ -496,7 +472,7 @@ def main():
     backend = cfg.get("backend", "quanto")  # "quanto" | "bnb_nf4"
     fixed_data = bool(cfg.get("fixed_data", False))  # same latent/target every step
 
-    global DATASET_ROOT, NUM_SAMPLES, TRAIN_AUDIO, AUDIO_IDX, ORDER
+    global DATASET_ROOT, NUM_SAMPLES, TRAIN_AUDIO, AUDIO_IDX
     TRAIN_AUDIO = bool(cfg.get("train_audio", False))
 
     DATASET_ROOT = (cfg.get("dataset_root") or os.environ.get("LTX_DATASET_ROOT")
@@ -505,7 +481,6 @@ def main():
     # so stale latents left over from earlier runs are never sampled.
     NUM_SAMPLES = 0
     AUDIO_IDX = set()
-    ORDER = []
     djson = os.path.join(DATASET_ROOT, "dataset.json")
     if os.path.exists(djson):
         try:
@@ -514,14 +489,8 @@ def main():
                 NUM_SAMPLES = len(_ds)
                 AUDIO_IDX = {i for i, s in enumerate(_ds)
                              if isinstance(s, dict) and (s.get("audio") or s.get("has_audio"))}
-                ORDER = _build_interleave(
-                    sorted(AUDIO_IDX),
-                    sorted(set(range(NUM_SAMPLES)) - AUDIO_IDX))
         except Exception:
             NUM_SAMPLES = 0
-    if ORDER:
-        print(f"[TR] interleave: {len(ORDER)} samples ({len(AUDIO_IDX)} voice / {NUM_SAMPLES - len(AUDIO_IDX)} image) "
-              f"-> {ORDER[:12]}...", flush=True)
     if NUM_SAMPLES <= 0:
         lat_dir = os.path.join(DATASET_ROOT, "latents", "scenes")
         if os.path.isdir(lat_dir):
