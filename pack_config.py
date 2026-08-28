@@ -49,6 +49,13 @@ def _find_in(root, name):
     return os.path.join(root, name)
 
 
+def _venv_python(pack_dir):
+    """Engine venv python for the current platform (Windows vs POSIX)."""
+    if os.name == "nt":
+        return os.path.join(pack_dir, ".venv", "Scripts", "python.exe")
+    return os.path.join(pack_dir, ".venv", "bin", "python")
+
+
 def _defaults():
     mroot = _comfy_models_root()
     dm = os.path.join(mroot, "diffusion_models")
@@ -56,7 +63,7 @@ def _defaults():
     vae = os.path.join(mroot, "vae")
     return {
         "engine_workdir": ENGINE_DIR,                          # self-contained engine/ inside the pack
-        "engine_python": os.path.join(PACK_DIR, ".venv", "Scripts", "python.exe"),
+        "engine_python": _venv_python(PACK_DIR),
         "packages_dir": PACKAGES_DIR,                          # vendored ltx-core / ltx-trainer
         "cache_dir": dm,                                       # where engine cache/derivatives land
         "int4_model_file": _find_in(dm, "ltx-2.5-22b-distilled-bnb-nf4.safetensors"),
@@ -101,7 +108,7 @@ def engine_python() -> str:
     if cfg.get("engine_python") and os.path.exists(cfg["engine_python"]):
         return cfg["engine_python"]
     # auto: package-local venv, else current python
-    local = os.path.join(PACK_DIR, ".venv", "Scripts", "python.exe")
+    local = _venv_python(PACK_DIR)
     if os.path.exists(local):
         return local
     return sys.executable

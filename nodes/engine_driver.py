@@ -86,9 +86,10 @@ _FFMPEG_SHARED_BIN_CACHE = None
 
 
 def ffmpeg_shared_bin():
-    """Directory containing FFmpeg SHARED DLLs (avcodec etc.) so torchaudio's
-    libtorchcodec decoder can load them. Auto-detects the WinGet shared build,
-    overridable via config.json `ffmpeg_shared_bin`. Cached."""
+    """Directory containing FFmpeg SHARED libs (avcodec etc.) so torchaudio's
+    libtorchcodec decoder can load them. Auto-detects the WinGet shared build on
+    Windows; overridable via config.json `ffmpeg_shared_bin`. Returns "" when none
+    found (audio decode falls back to the FFmpeg CLI + soundfile path). Cached."""
     global _FFMPEG_SHARED_BIN_CACHE
     if _FFMPEG_SHARED_BIN_CACHE is not None:
         return _FFMPEG_SHARED_BIN_CACHE
@@ -97,11 +98,14 @@ def ffmpeg_shared_bin():
     if cand and os.path.isdir(cand):
         _FFMPEG_SHARED_BIN_CACHE = cand
         return cand
-    import glob
-    base = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages")
-    for dll in glob.glob(os.path.join(base, "**", "avcodec*.dll"), recursive=True):
-        _FFMPEG_SHARED_BIN_CACHE = os.path.dirname(dll)
-        return _FFMPEG_SHARED_BIN_CACHE
+    if os.name == "nt":
+        import glob
+        base = os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Packages")
+        for dll in glob.glob(os.path.join(base, "**", "avcodec*.dll"), recursive=True):
+            _FFMPEG_SHARED_BIN_CACHE = os.path.dirname(dll)
+            return _FFMPEG_SHARED_BIN_CACHE
+    # POSIX: imageio-ffmpeg ships a full static ffmpeg build; its sibling dir has
+    # no separate shared libs, so there is nothing to add to PATH there.
     _FFMPEG_SHARED_BIN_CACHE = ""
     return ""
 

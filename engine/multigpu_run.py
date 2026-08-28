@@ -44,7 +44,10 @@ def main() -> None:
         env["LOCAL_RANK"] = str(rank)
         env["WORLD_SIZE"] = str(args.world)
         env["MASTER_ADDR"] = "127.0.0.1"
-        env["MASTER_PORT"] = "29500"
+        # DDP port: LTX_DDP_PORT overrides; else keep MASTER_PORT if the caller set
+        # it, otherwise default. Must match train_parallel.py's init_method.
+        env["MASTER_PORT"] = (os.environ.get("LTX_DDP_PORT")
+                              or os.environ.get("MASTER_PORT") or "29500")
         # Keep ALL GPUs visible so DDP's device-index bookkeeping works; each rank
         # pins to its own device via LOCAL_RANK. (Setting CUDA_VISIBLE_DEVICES per
         # rank breaks DDP's _streams[device.index] lookup on this torch build.)

@@ -464,7 +464,8 @@
         16,
         250,
         true,
-        true,
+        "auto",
+        0.0,
         false
       ],
       "widgets_values_named": {
@@ -476,7 +477,8 @@
         "alpha": 16,
         "checkpoint_interval": 250,
         "blocking": true,
-        "gradient_checkpointing": true,
+        "checkpoint_level": "auto",
+        "vram_ceiling_gb": 0.0,
         "use_wsl": false
       },
       "color": "#223",

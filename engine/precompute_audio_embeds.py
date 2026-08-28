@@ -80,7 +80,13 @@ def main():
                 print(f"[precompute] skip (not a dict): {path}", flush=True)
                 skipped += 1
                 continue
-            if cd.get("audio_embeds") is not None or cd.get("video_embeds") is not None:
+            if cd.get("audio_embeds") is not None:
+                # Fully processed (video + audio embeds already cached). Skip.
+                skipped += 1
+                continue
+            if cd.get("video_embeds") is not None and cd.get("audio_prompt_embeds") is None:
+                # Image-only clip: video embeds cached and there is no audio track to
+                # backfill, so there is nothing left to compute. Skip.
                 skipped += 1
                 continue
             vfeats = cd.get("video_prompt_embeds")

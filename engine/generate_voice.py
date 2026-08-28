@@ -19,9 +19,19 @@ apply_msvc_env()
 
 import torch  # noqa: E402
 
-from ltx_pipelines.t2a_one_stage import T2AOneStagePipeline  # noqa: E402
-from ltx_pipelines.utils.model_paths import ModelPaths  # noqa: E402
-from ltx_pipelines.utils.media_io import encode_audio  # noqa: E402
+try:
+    from ltx_pipelines.t2a_one_stage import T2AOneStagePipeline  # noqa: E402
+    from ltx_pipelines.utils.model_paths import ModelPaths  # noqa: E402
+    from ltx_pipelines.utils.media_io import encode_audio  # noqa: E402
+except ImportError as _e:  # pragma: no cover - standalone helper path
+    print(
+        "[generate_voice] WARNING: the T2A voice-synthesis helper needs the `ltx-pipelines` "
+        f"package, which is not bundled with this pack ({_e}).\n"
+        "  Voice generation is OPTIONAL - training works without it. Either vendor "
+        "`ltx-pipelines` into packages/ or upload a real voice clip instead.",
+        flush=True,
+    )
+    raise SystemExit(2) from _e
 from ltx_core.components.guiders import MultiModalGuiderParams  # noqa: E402
 
 VOICE_PROMPTS = {

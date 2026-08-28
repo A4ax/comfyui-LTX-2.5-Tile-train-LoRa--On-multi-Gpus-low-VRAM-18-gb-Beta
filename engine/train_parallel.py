@@ -53,8 +53,11 @@ world = int(os.environ["WORLD_SIZE"])
 torch.cuda.set_device(rank)
 device = torch.device(f"cuda:{rank}")
 USE_NCCL = (sys.platform != "win32") and dist.is_nccl_available()
+# DDP rendezvous port - configurable via env to avoid collisions when multiple
+# runs are launched on one host (e.g. LTX_DDP_PORT or MASTER_PORT).
+_master_port = os.environ.get("LTX_DDP_PORT") or os.environ.get("MASTER_PORT") or "29570"
 dist.init_process_group("nccl" if USE_NCCL else "gloo",
-                        init_method="tcp://127.0.0.1:29570", rank=rank, world_size=world)
+                        init_method=f"tcp://127.0.0.1:{_master_port}", rank=rank, world_size=world)
 print(f"[TR] dist backend={'nccl' if USE_NCCL else 'gloo'}", flush=True)
 try:
     _alloc_backend = torch.cuda.memory.get_allocator_backend()

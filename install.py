@@ -69,20 +69,22 @@ def _has_nvidia():
 
 
 def _install_torch(py):
-    """Install torch + torchvision + torchaudio with the CORRECT build.
+    """Install torch + torchvision + torchaudio + torchcodec with the CORRECT build.
     NVIDIA GPU present -> CUDA-enabled torch from the PyTorch cu130 index (so a fresh
     machine never ends up with CPU-only torch, and RTX 50-series / Blackwell cards are
-    supported). Otherwise -> default (CPU) torch."""
+    supported). Otherwise -> default (CPU) torch. torchcodec is installed from the SAME
+    index so its C++ ABI always matches the torch build (a mismatched wheel breaks
+    torchaudio audio decode)."""
     if not _has_nvidia():
         print("No NVIDIA GPU detected - installing CPU-only PyTorch (GPU training unavailable).", flush=True)
-        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio"])
+        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio", "torchcodec"])
         return ok
     print("NVIDIA GPU detected - installing CUDA-enabled PyTorch (cu130)...", flush=True)
-    ok = _pip(py, ["install", "torch", "torchvision", "torchaudio",
+    ok = _pip(py, ["install", "torch", "torchvision", "torchaudio", "torchcodec",
                    "--index-url", "https://download.pytorch.org/whl/cu130"])
     if not ok:
         print("CUDA torch install failed; falling back to default (CPU) torch.", flush=True)
-        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio"])
+        ok = _pip(py, ["install", "torch", "torchvision", "torchaudio", "torchcodec"])
     return ok
 
 

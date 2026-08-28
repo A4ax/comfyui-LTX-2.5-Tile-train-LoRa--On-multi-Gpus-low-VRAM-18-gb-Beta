@@ -1,9 +1,14 @@
 # LTX-2.5 Int4 Tile-Train training engine dependencies.
 # These go in the ENGINE venv (not ComfyUI's own venv) — install.py handles this.
-# NOTE: torch / torchvision / torchaudio are NOT listed here — install.py installs
-# them with the correct build (CUDA-enabled cu130 when an NVIDIA GPU is detected,
-# else CPU-only), so a fresh user never ends up with a CPU-only torch on a CUDA
-# machine.
+# NOTE: torch / torchvision / torchaudio / torchcodec are NOT listed here —
+# install.py installs them with the correct build (CUDA-enabled cu130 when an
+# NVIDIA GPU is detected, else CPU-only), so a fresh user never ends up with a
+# CPU-only torch on a CUDA machine and torchcodec always matches the torch ABI.
+#
+# This file also covers the runtime deps of the vendored packages
+# (packages/ltx-trainer + packages/ltx-core), which are added to sys.path
+# directly (no `pip install -e`). Keep the bounds below aligned with those
+# pyproject.toml files.
 #
 # Minimum versions mirror the stack this pack is developed and verified against.
 # The only hard pin is bitsandbytes (prebuilt Windows wheel, proven with the
@@ -14,17 +19,25 @@ imageio>=2.36
 imageio-ffmpeg>=0.6
 numpy>=1.26
 opencv-python>=4.10
+pandas>=2.2.3
 peft>=0.13
 pillow>=10
+pillow-heif>=0.21.0
 protobuf>=4.25
 accelerate>=0.33
+rich>=13.9.4
 safetensors>=0.4.2
+scenedetect>=0.6.5.2
+scikit-image>=0.25.2
 scipy>=1.11
 sentencepiece>=0.2
+setuptools>=79.0.0
 soundfile>=0.12
 tokenizers>=0.19
 tqdm>=4.66
-transformers>=4.50
+transformers>=5.8.0,<5.15
+typer>=0.15.1
+wandb>=0.27.0
 huggingface_hub>=0.23
 pyyaml>=6.0
 bitsandbytes==0.50.1
