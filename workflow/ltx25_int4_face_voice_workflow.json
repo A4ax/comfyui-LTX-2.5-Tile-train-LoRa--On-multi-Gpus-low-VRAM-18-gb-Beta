@@ -41,9 +41,9 @@
         "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
         "ltx-2.5-video-vae-bf16.safetensors",
         "ltx-2.5-audio-vae-bf16.safetensors",
-        24,
-        24,
-        0,
+        19,
+        20,
+        9,
         "gpu0",
         "gpu2",
         "gpu2"
@@ -54,9 +54,9 @@
         "text_encoder": "gemma4-12b-with-proj-ltx-2.5-bf16.safetensors",
         "video_vae": "ltx-2.5-video-vae-bf16.safetensors",
         "audio_vae": "ltx-2.5-audio-vae-bf16.safetensors",
-        "transformer_blocks_gpu0": 24,
-        "transformer_blocks_gpu1": 24,
-        "transformer_blocks_gpu2": 0,
+        "transformer_blocks_gpu0": 19,
+        "transformer_blocks_gpu1": 20,
+        "transformer_blocks_gpu2": 9,
         "connectors_device": "gpu0",
         "video_vae_device": "gpu2",
         "audio_vae_device": "gpu2"
@@ -104,8 +104,8 @@
         "Node name for S&R": "O2noorLTX25Int4VoiceDataset"
       },
       "widgets_values": [
-        "[\"WhatsApp Video 2026-08-23 at 13.37.42.mp4\",\"WhatsApp Video 2026-08-23 at 13.37.50.mp4\"]",
-        "[\"WhatsApp Image 2026-08-23 at 13.37.51.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59.jpeg\"]",
+        "[]",
+        "[]",
         "face+voice",
         0.7,
         20,
@@ -113,15 +113,15 @@
         512,
         24,
         "ltxchar",
-        "D:\\Comfy-Desktop\\ComfyUI-Installs\\nooraldeen\\ComfyUI\\dataset",
+        "",
         true,
         0,
         128,
         false
       ],
       "widgets_values_named": {
-        "videos": "[\"WhatsApp Video 2026-08-23 at 13.37.42.mp4\",\"WhatsApp Video 2026-08-23 at 13.37.50.mp4\"]",
-        "images": "[\"WhatsApp Image 2026-08-23 at 13.37.51.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.52.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.53.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.54.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.55.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.56.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (2).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57 (3).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.57.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.58.jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59 (1).jpeg\",\"WhatsApp Image 2026-08-23 at 13.37.59.jpeg\"]",
+        "videos": "[]",
+        "images": "[]",
         "mode": "face+voice",
         "segment_duration": 0.7,
         "max_segments": 20,
@@ -129,7 +129,7 @@
         "height": 512,
         "clip_fps": 24,
         "trigger_word": "ltxchar",
-        "output_dir": "D:\\Comfy-Desktop\\ComfyUI-Installs\\nooraldeen\\ComfyUI\\dataset",
+        "output_dir": "",
         "vae_tiling": true,
         "vae_tile_size": 0,
         "vae_tile_overlap": 128,
@@ -173,14 +173,14 @@
       },
       "widgets_values": [
         "ltxchar",
-        "0,1",
-        "D:\\LTX-TRAINING\\working\\captions_cache",
+        "",
+        "",
         false
       ],
       "widgets_values_named": {
         "captions": "ltxchar",
-        "gpus": "0,1",
-        "output_dir": "D:\\LTX-TRAINING\\working\\captions_cache",
+        "gpus": "",
+        "output_dir": "",
         "overwrite": false
       },
       "color": "#223",

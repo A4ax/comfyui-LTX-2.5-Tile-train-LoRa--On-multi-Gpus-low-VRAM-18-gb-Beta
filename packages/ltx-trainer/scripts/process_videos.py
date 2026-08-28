@@ -15,6 +15,9 @@ Can be used as a standalone script:
 import json
 import math
 import os
+import shutil
+import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -22,6 +25,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import soundfile
 import torch
 import torchaudio
 import typer
@@ -1287,20 +1291,63 @@ def _load_paths_from_dataset(dataset_file: Path, column: str) -> list[Path]:
     raise ValueError(f"Unsupported dataset format: {dataset_file.suffix}")
 
 
-def _load_audio_from_file(audio_path: Path, max_duration: float | None = None) -> Audio | None:
-    """Load audio from an audio or video file, optionally trimming to max_duration."""
+def _ffmpeg_exe() -> str:
+    """Find an FFmpeg CLI binary (PATH, then imageio_ffmpeg's bundled build)."""
+    exe = shutil.which("ffmpeg")
+    if exe:
+        return exe
     try:
-        waveform, sample_rate = torchaudio.load(str(audio_path))
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+def _load_audio_from_file(audio_path: Path, max_duration: float | None = None) -> Audio | None:
+    """Load audio from an audio or video file, optionally trimming to max_duration.
+
+    Decodes with the FFmpeg CLI into a temporary WAV (avoids torchaudio's
+    libtorchcodec dependency, which is frequently unavailable on Windows), then
+    reads the WAV via soundfile. Returns an ``Audio`` with a float32 waveform
+    shaped ``[channels, samples]`` (same contract as ``torchaudio.load``).
+    """
+    tmp_wav = None
+    try:
+        # Fast path: soundfile reads WAV/FLAC/OGG directly without FFmpeg.
+        if audio_path.suffix.lower() in {".wav", ".flac", ".ogg", ".aiff", ".aif"}:
+            data, sample_rate = soundfile.read(str(audio_path), dtype="float32", always_2d=True)
+        else:
+            # Video / other containers: decode audio track to a temp WAV via FFmpeg.
+            fd, tmp_wav = tempfile.mkstemp(suffix=".wav", prefix="ltx_audio_")
+            os.close(fd)
+            r = subprocess.run(
+                [_ffmpeg_exe(), "-y", "-loglevel", "error", "-i", str(audio_path),
+                 "-vn", "-acodec", "pcm_s16le", tmp_wav],
+                capture_output=True, text=True, timeout=120,
+            )
+            if r.returncode != 0 or not os.path.exists(tmp_wav) or os.path.getsize(tmp_wav) == 0:
+                logger.debug(f"Could not load audio from {audio_path} (ffmpeg rc={r.returncode})")
+                return None
+            data, sample_rate = soundfile.read(tmp_wav, dtype="float32", always_2d=True)
     except Exception:
         logger.debug(f"Could not load audio from {audio_path}")
         return None
+    finally:
+        if tmp_wav and os.path.exists(tmp_wav):
+            try:
+                os.remove(tmp_wav)
+            except Exception:
+                pass
+
+    # soundfile returns (samples, channels); torchaudio contract is [channels, samples].
+    waveform = torch.from_numpy(data.T).contiguous()
 
     if max_duration is not None:
         max_samples = int(max_duration * sample_rate)
         if waveform.shape[-1] > max_samples:
             waveform = waveform[:, :max_samples]
 
-    return Audio(waveform=waveform, sampling_rate=sample_rate)
+    return Audio(waveform=waveform, sampling_rate=int(sample_rate))
 
 
 def detect_dataset_columns(dataset_file: str | Path) -> set[str]:

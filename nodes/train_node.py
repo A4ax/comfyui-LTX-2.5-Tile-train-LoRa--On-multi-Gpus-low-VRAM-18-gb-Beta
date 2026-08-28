@@ -178,6 +178,17 @@ class O2noorLTX25Int4Train:
         n_gpu = engine_driver.detect_cuda_gpus()
         world = min(run_cfg["world"] or n_gpu, n_gpu)
         world = max(1, world)
+        # A saved workflow's block split may target a different GPU count than this
+        # machine (e.g. 19/20/9 from a 3-GPU rig loaded on a 2-GPU PC). Rebalance the
+        # counts evenly across the ACTUAL world so build_allocation(48, counts) never
+        # gets a rank mismatch.
+        if block_counts and len(block_counts) != world:
+            base = 48 // world
+            rem = 48 % world
+            block_counts = [base + (1 if i < rem else 0) for i in range(world)]
+            run_cfg["block_counts"] = block_counts
+            run_cfg["world"] = world
+            print(f"[O2noorLTX25Int4Train] rebalanced blocks/GPU -> {block_counts} (world={world})", flush=True)
         devices = ",".join(str(i) for i in range(world))
 
         if use_wsl:

@@ -134,11 +134,18 @@ class O2noorLTX25Int4LoadModel:
         blocks = {}
         for i in range(n_gpu):
             blocks[f"blocks_gpu{i}"] = int(kwargs.get(f"transformer_blocks_gpu{i}") or 0)
+        # Clamp device selections to GPUs that actually exist on THIS machine (a saved
+        # workflow may name gpu2 on a 2-GPU rig). Never pass an out-of-range index.
+        def _clamp(dev, fallback):
+            dev = str(dev or "")
+            if dev.startswith("gpu") and dev[3:].isdigit():
+                return dev if int(dev[3:]) < n_gpu else f"gpu{max(0, n_gpu - 1)}"
+            return fallback if n_gpu == 0 else f"gpu{max(0, n_gpu - 1)}"
         device_config = {
             "transformer": blocks,
-            "connectors": str(connectors_device),
-            "video_vae": str(video_vae_device),
-            "audio_vae": str(audio_vae_device),
+            "connectors": _clamp(connectors_device, "gpu0"),
+            "video_vae": _clamp(video_vae_device, f"gpu{max(0, n_gpu - 1)}"),
+            "audio_vae": _clamp(audio_vae_device, f"gpu{max(0, n_gpu - 1)}"),
         }
         bundle = {
             "int4_model_file": path_of("diffusion_models", int4_model),
